@@ -1,0 +1,29 @@
+{
+  "name": "zigchain-wallet-monitor-bot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Production-grade Telegram bot for ZigChain wallet monitoring.",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@cosmjs/encoding": "^0.38.1",
+    "cosmjs-types": "^0.11.0",
+    "dotenv": "^17.4.2",
+    "pino": "^10.3.1",
+    "telegraf": "^4.16.3",
+    "ws": "^8.20.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.3"
+  }
+}
