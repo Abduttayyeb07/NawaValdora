@@ -5,3 +5,4 @@ dist
 data/*.json
 .env
 npm-debug.log*
+data/ 

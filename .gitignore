@@ -4,3 +4,4 @@ dist/
 data/*.json
 !.gitkeep
 npm-debug.log*
+data/

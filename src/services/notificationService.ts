@@ -1,8 +1,16 @@
 import type { Logger } from "pino";
 
 import type { ContractCallAlert, SwapAlert, TransferAlert, WalletAlert } from "../types/blockchain";
-import { formatCoinList, formatDirection, formatTokenDescriptor, formatWallet } from "../utils/format";
+import { formatCoinList, formatTokenDescriptor } from "../utils/format";
 import type { TelegramBotService } from "../bot/telegramBot";
+
+function esc(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function txLink(hash: string): string {
+  return `<a href="https://www.zigscan.org/tx/${hash}">${hash}</a>`;
+}
 
 export class NotificationService {
   private readonly logger: Logger;
@@ -40,93 +48,79 @@ export class NotificationService {
   }
 
   private formatTransferAlert(alert: TransferAlert): string {
+    const directionLabel =
+      alert.direction === "INFLOW" ? "Inflow" :
+      alert.direction === "OUTFLOW" ? "Outflow" : "Internal Transfer";
+    const emoji = alert.direction === "INFLOW" ? "💰" : alert.direction === "OUTFLOW" ? "🚨" : "🔄";
+
     const lines = [
-      "🚨 Wallet Activity Detected",
+      `${emoji} <b>${esc(alert.wallet.label)} — ${directionLabel} Detected</b>`,
       "",
-      "Type: Transfer",
-      `Direction: ${formatDirection(alert.direction)}`,
-      `Wallet: ${formatWallet(alert.wallet)}`,
-      "",
-      `From: ${alert.fromAddress}`,
-      `To: ${alert.toAddress}`,
-      `Amount: ${formatCoinList(alert.amounts)}`,
-      "",
-      `Tx Hash: ${alert.txHash}`,
-      `Block: ${alert.height}`,
+      `From: <code>${alert.fromAddress}</code>`,
+      `To: <code>${alert.toAddress}</code>`,
+      `Amount: ${esc(formatCoinList(alert.amounts))}`,
     ];
 
-    if (alert.timestamp) {
-      lines.push(`Time: ${alert.timestamp}`);
+    if (alert.memo) {
+      lines.push(`Memo: ${esc(alert.memo)}`);
     }
 
-    if (alert.memo) {
-      lines.push(`Memo: ${alert.memo}`);
-    }
+    lines.push("", `Tx: ${txLink(alert.txHash)}`, `Block: ${alert.height}`);
 
     return lines.join("\n");
   }
 
   private formatSwapAlert(alert: SwapAlert): string {
     const lines = [
-      "🔁 Swap Detected",
+      `🔁 <b>${esc(alert.wallet.label)} — Swap Detected</b>`,
       "",
-      `Wallet: ${formatWallet(alert.wallet)}`,
-      `Sender: ${alert.sender}`,
-      `Contract: ${alert.targetContract ?? alert.contract}`,
+      `Sender: <code>${alert.sender}</code>`,
     ];
 
     if (alert.inputToken) {
-      lines.push(`Sent: ${formatTokenDescriptor(alert.inputToken)}`);
+      lines.push(`Sent: ${esc(formatTokenDescriptor(alert.inputToken))}`);
     }
 
     if (alert.outputToken) {
-      lines.push(`Received: ${formatTokenDescriptor(alert.outputToken)}${alert.outputToken.amount ? "" : " (inferred)"}`);
+      lines.push(`Received: ${esc(formatTokenDescriptor(alert.outputToken))}${alert.outputToken.amount ? "" : " (inferred)"}`);
     }
 
     if (alert.memo) {
-      lines.push(`Memo: ${alert.memo}`);
+      lines.push(`Memo: ${esc(alert.memo)}`);
     }
 
-    lines.push("", `Tx Hash: ${alert.txHash}`, `Block: ${alert.height}`);
-
-    if (alert.timestamp) {
-      lines.push(`Time: ${alert.timestamp}`);
-    }
+    lines.push("", `Tx: ${txLink(alert.txHash)}`, `Block: ${alert.height}`);
 
     return lines.join("\n");
   }
 
   private formatContractCallAlert(alert: ContractCallAlert): string {
+    const directionLabel =
+      alert.direction === "INFLOW" ? "Inflow" :
+      alert.direction === "OUTFLOW" ? "Outflow" :
+      alert.direction === "INTERNAL" ? "Internal" : "";
+
     const lines = [
-      "⚙️ Contract Activity Detected",
+      `⚙️ <b>${esc(alert.wallet.label)} — Contract Activity${directionLabel ? ` (${directionLabel})` : ""}</b>`,
       "",
-      `Wallet: ${formatWallet(alert.wallet)}`,
-      `Summary: ${alert.summary}`,
-      `Sender: ${alert.sender}`,
-      `Contract: ${alert.targetContract ?? alert.contract}`,
+      `Summary: ${esc(alert.summary)}`,
+      `Sender: <code>${alert.sender}</code>`,
+      `Contract: <code>${alert.targetContract ?? alert.contract}</code>`,
     ];
 
     if (alert.recipient) {
-      lines.push(`Recipient: ${alert.recipient}`);
+      lines.push(`Recipient: <code>${alert.recipient}</code>`);
     }
 
     if (alert.assetLabel && alert.amount) {
-      lines.push(`Asset: ${alert.amount} ${alert.assetLabel}`);
-    }
-
-    if (alert.direction) {
-      lines.push(`Direction: ${formatDirection(alert.direction)}`);
+      lines.push(`Asset: ${esc(alert.amount)} ${esc(alert.assetLabel)}`);
     }
 
     if (alert.memo) {
-      lines.push(`Memo: ${alert.memo}`);
+      lines.push(`Memo: ${esc(alert.memo)}`);
     }
 
-    lines.push("", `Tx Hash: ${alert.txHash}`, `Block: ${alert.height}`);
-
-    if (alert.timestamp) {
-      lines.push(`Time: ${alert.timestamp}`);
-    }
+    lines.push("", `Tx: ${txLink(alert.txHash)}`, `Block: ${alert.height}`);
 
     return lines.join("\n");
   }

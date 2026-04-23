@@ -12,11 +12,17 @@ import { TransactionMonitorService } from "./services/transactionMonitorService"
 import { loadConfig } from "./utils/config";
 import { logger } from "./utils/logger";
 
+function sleep(delayMs: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, delayMs));
+}
+
 async function main(): Promise<void> {
   const config = loadConfig();
   const appLogger = logger.child({ service: "zigchain-wallet-monitor" });
-  const stateStore = new StateStore(config.stateFilePath);
+  appLogger.info({ logLevel: process.env.LOG_LEVEL ?? "info" }, "Configuration loaded");
+  const stateStore = new StateStore(config.subscribersFilePath);
   await stateStore.load();
+  appLogger.info("State store loaded");
 
   const telegramBotService = new TelegramBotService({
     logger: appLogger,
@@ -46,12 +52,13 @@ async function main(): Promise<void> {
   const blockProcessor = new BlockProcessor({
     logger: appLogger,
     rpcClient,
-    stateStore,
+    trackedWallets: config.trackedWallets,
     transactionMonitorService,
     transactionParser,
+    workerCount: config.blockWorkerCount,
   });
 
-  await telegramBotService.launch();
+  appLogger.info("Initializing block processor");
   await blockProcessor.initialize();
 
   const scheduleHeight = (height: number): void => {
@@ -65,6 +72,7 @@ async function main(): Promise<void> {
     reconnectBaseDelayMs: config.reconnectBaseDelayMs,
     reconnectMaxDelayMs: config.reconnectMaxDelayMs,
     staleMs: config.wsStaleMs,
+    trackedWallets: config.trackedWallets,
     wsUrl: config.wsUrl,
   });
 
@@ -75,15 +83,40 @@ async function main(): Promise<void> {
     rpcClient,
   });
 
+  appLogger.info("Starting WebSocket listener");
   websocketListener.start();
+  appLogger.info("Starting polling fallback");
   pollingFallback.start();
+  appLogger.info("Launching Telegram bot service");
 
   appLogger.info(
-    { trackedWalletCount: config.trackedWallets.length },
+    { blockWorkerCount: config.blockWorkerCount, trackedWalletCount: config.trackedWallets.length },
     "ZigChain wallet monitor started",
   );
 
   let shuttingDown = false;
+
+  const startTelegramBot = async (): Promise<void> => {
+    let attempt = 0;
+
+    while (!shuttingDown) {
+      try {
+        await telegramBotService.launch();
+        return;
+      } catch (error) {
+        attempt += 1;
+        const delayMs = Math.min(1_000 * 2 ** (attempt - 1), 30_000);
+        appLogger.error(
+          { attempt, delayMs, error },
+          "Telegram bot launch failed; monitoring will continue and startup will retry",
+        );
+        await sleep(delayMs);
+      }
+    }
+  };
+
+  void startTelegramBot();
+
   const shutdown = async (signal: string): Promise<void> => {
     if (shuttingDown) {
       return;

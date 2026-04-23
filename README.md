@@ -1,17 +1,18 @@
 # ZigChain Wallet Monitor Bot
 
-Production-grade Telegram bot written in strict TypeScript for monitoring tracked ZigChain wallets and sending real-time alerts for:
+Production-grade Telegram bot written in strict TypeScript for monitoring only the tracked ZigChain wallets you configure and sending real-time alerts for:
 
 - native transfers via `/cosmos.bank.v1beta1.MsgSend`
 - CosmWasm contract activity via `/cosmwasm.wasm.v1.MsgExecuteContract`
 - swap-like contract executions inferred from CosmWasm payloads and events
 
-The service uses ZigChain WebSocket subscriptions for low-latency detection and RPC block processing for deterministic parsing, checkpointing, and restart safety.
+The service uses wallet-scoped ZigChain WebSocket subscriptions for low-latency detection and wallet-scoped RPC `tx_search` fallback for deterministic parsing, checkpointing, and restart safety.
 
 ## Features
 
-- WebSocket-first listener with automatic reconnect
-- Polling fallback if WebSocket delivery is missed or delayed
+- Wallet-scoped WebSocket listener with automatic reconnect
+- Wallet-scoped RPC fallback if WebSocket delivery is missed or delayed
+- Parallel block catch-up with bounded worker concurrency and in-order checkpoint advancement
 - Strict TypeScript build with modular service layout
 - Block checkpoint persistence in `data/state.json`
 - Telegram chat subscription commands:
@@ -66,16 +67,20 @@ Optional:
 - `LOG_LEVEL`
   - default: `info`
   - use `debug` if you want to see WebSocket event flow and block scheduling in detail
+- `BLOCK_WORKER_COUNT`
+  - default: `5`
+  - controls how many block heights can be processed in parallel during catch-up
 
 Example:
 
 ```env
 TELEGRAM_BOT_TOKEN=123456:telegram-bot-token
-RPC_URL=https://zigchain-mainnet.zigscan.net/
-WS_URL=wss://zigchain-mainnet.zigscan.net/websocket
-VAULT_WALLETS=zig1c7ltk2w9x6nqdkzuv2xp3pcxuqnwcya9ackdxj,zig12q5lshzwywgf4dryhn3tcw0cd2p468hw6w22sh,zig18fxy8zrnpccftn3l4uj98ruajqhfpnwq09cnp8,zig1laq7y7hmkuvracnuxzcgujlhlr0h2tuqekal2m,zig1ssf7peey2gs2m4rwwg9qq6dx0ezq4fkd6wfvg2
-NAWA_USDC_WALLET=zig1h029787ganqh9c2up868nhh4gvsrytp0zg9aw5
+RPC_URL=rpc url
+WS_URL=websocket url 
+VAULT_WALLETS= wallets to track 
+NAWA_USDC_WALLET= wallets of nawa to track
 LOG_LEVEL=info
+BLOCK_WORKER_COUNT=5
 ```
 
 ## Run Locally
@@ -90,6 +95,14 @@ npm.cmd install
 
 ```powershell
 npm.cmd run dev
+```
+
+This starts the service directly.
+
+If you want file watching during development:
+
+```powershell
+npm.cmd run dev:watch
 ```
 
 ### 3. Build for production
@@ -192,9 +205,13 @@ docker rm -f zigchain-wallet-monitor
 ## Operational Notes
 
 - On first boot, if no checkpoint exists, the monitor starts from the current ZigChain height instead of replaying old history.
-- WebSocket subscriptions are used as triggers, but full processing always happens by block height over RPC.
+- WebSocket subscriptions are built only from the configured wallet list.
+- RPC fallback searches only wallet-related indexed transactions using `message.sender`, `transfer.sender`, and `transfer.recipient`.
+- Catch-up uses a worker pool and only dispatches heights up to the latest observed chain height, so workers do not run out of range.
+- The persisted checkpoint still advances in order, even though multiple heights can be processed in parallel.
 - This avoids duplicate handling and makes restart recovery deterministic.
 - `LOG_LEVEL=debug` is useful when validating subscriptions and real-time event flow.
+- `npm.cmd run dev` now builds first and then runs `dist/index.js`, which is the more reliable startup path for this bot on Windows.
 - No inbound HTTP port is exposed because this service only talks outbound to ZigChain RPC/WebSocket and Telegram.
 
 ## Useful Commands

@@ -55,10 +55,31 @@ interface RawAttribute {
   readonly value?: string;
 }
 
+interface TxSearchResult {
+  readonly total_count?: string;
+  readonly totalCount?: string;
+  readonly txs?: RawSearchTx[];
+}
+
+interface RawSearchTx {
+  readonly hash?: string;
+  readonly height?: string;
+  readonly tx?: string;
+  readonly tx_result?: RawTxResult;
+  readonly txResult?: RawTxResult;
+}
+
 export interface RpcBlock {
   readonly height: number;
   readonly timestamp?: string;
   readonly txs: string[];
+}
+
+export interface RpcIndexedTransaction {
+  readonly hash: string;
+  readonly height: number;
+  readonly txBase64: string;
+  readonly txResult: RpcTxResult;
 }
 
 function toNumber(value: string | number | undefined, fallback = 0): number {
@@ -145,6 +166,49 @@ export class RpcClient {
     return txResults.map((result) => normalizeTxResult(result));
   }
 
+  public async searchTransactions(
+    query: string,
+    minHeight: number,
+    maxHeight: number,
+  ): Promise<RpcIndexedTransaction[]> {
+    const transactions: RpcIndexedTransaction[] = [];
+    const boundedQuery = `${query} AND tx.height >= ${minHeight} AND tx.height <= ${maxHeight}`;
+    const perPage = 100;
+    let page = 1;
+
+    // CometBFT's URL-form tx_search requires the `query` and `order_by` values to be
+    // wrapped in literal double quotes; without them this node returns HTTP 500.
+    while (true) {
+      const response = await this.request<TxSearchResult>("tx_search", {
+        order_by: '"asc"',
+        page: String(page),
+        per_page: String(perPage),
+        prove: "false",
+        query: `"${boundedQuery}"`,
+      });
+
+      const batch = (response.txs ?? [])
+        .map((tx) => ({
+          hash: tx.hash ?? "",
+          height: toNumber(tx.height),
+          txBase64: tx.tx ?? "",
+          txResult: normalizeTxResult(tx.tx_result ?? tx.txResult),
+        }))
+        .filter((tx) => tx.hash !== "" && tx.txBase64 !== "");
+
+      transactions.push(...batch);
+
+      const total = toNumber(response.total_count ?? response.totalCount, batch.length);
+      if (batch.length < perPage || page * perPage >= total) {
+        break;
+      }
+
+      page += 1;
+    }
+
+    return transactions;
+  }
+
   private async request<T>(path: string, params?: Record<string, string>): Promise<T> {
     const url = new URL(path.replace(/^\//, ""), this.baseUrl);
 
@@ -167,7 +231,10 @@ export class RpcClient {
       });
 
       if (!response.ok) {
-        throw new Error(`RPC request failed with status ${response.status}`);
+        const body = await response.text().catch(() => "");
+        throw new Error(
+          `RPC request failed with status ${response.status}: ${body.slice(0, 500)}`,
+        );
       }
 
       const payload = (await response.json()) as RpcEnvelope<T>;
@@ -181,7 +248,15 @@ export class RpcClient {
 
       return payload.result;
     } catch (error) {
-      this.logger.error({ error, path, params }, "RPC request failed");
+      this.logger.error(
+        {
+          error,
+          errorMessage: error instanceof Error ? error.message : String(error),
+          params,
+          path,
+        },
+        "RPC request failed",
+      );
       throw error;
     } finally {
       clearTimeout(timeout);

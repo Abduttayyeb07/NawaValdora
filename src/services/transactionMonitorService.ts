@@ -42,6 +42,18 @@ export class TransactionMonitorService {
     }
 
     const alerts = this.createAlerts(transaction);
+    if (alerts.length === 0) {
+      this.logger.debug(
+        { height: transaction.height, messageCount: transaction.messages.length, txHash: transaction.hash },
+        "Transaction did not match any tracked wallet",
+      );
+      return;
+    }
+
+    this.logger.info(
+      { alertCount: alerts.length, height: transaction.height, txHash: transaction.hash },
+      "Matched tracked wallet activity",
+    );
     for (const alert of alerts) {
       await this.notificationService.sendAlert(alert);
     }

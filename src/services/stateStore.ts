@@ -9,14 +9,12 @@ export interface TelegramSubscriber {
 }
 
 export interface AppState {
-  readonly lastProcessedHeight: number | null;
   readonly subscribers: TelegramSubscriber[];
   readonly updatedAt: string;
 }
 
 function createDefaultState(): AppState {
   return {
-    lastProcessedHeight: null,
     subscribers: [],
     updatedAt: new Date().toISOString(),
   };
@@ -38,8 +36,6 @@ export class StateStore {
       const content = await readFile(this.filePath, "utf8");
       const parsed = JSON.parse(content) as Partial<AppState>;
       this.state = {
-        lastProcessedHeight:
-          typeof parsed.lastProcessedHeight === "number" ? parsed.lastProcessedHeight : null,
         subscribers: Array.isArray(parsed.subscribers)
           ? parsed.subscribers.filter(
               (subscriber): subscriber is TelegramSubscriber =>
@@ -58,19 +54,6 @@ export class StateStore {
     }
 
     return this.snapshot();
-  }
-
-  public getLastProcessedHeight(): number | null {
-    return this.state.lastProcessedHeight;
-  }
-
-  public async setLastProcessedHeight(height: number): Promise<void> {
-    this.state = {
-      ...this.state,
-      lastProcessedHeight: height,
-      updatedAt: new Date().toISOString(),
-    };
-    await this.persist();
   }
 
   public listSubscribers(): TelegramSubscriber[] {
@@ -111,7 +94,6 @@ export class StateStore {
 
   public snapshot(): AppState {
     return {
-      lastProcessedHeight: this.state.lastProcessedHeight,
       subscribers: [...this.state.subscribers],
       updatedAt: this.state.updatedAt,
     };

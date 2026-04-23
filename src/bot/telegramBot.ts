@@ -51,6 +51,10 @@ function isPermanentChatError(error: unknown): boolean {
 export class TelegramBotService {
   private readonly bot: Telegraf;
 
+  private handlersConfigured = false;
+
+  private launched = false;
+
   private readonly logger: Logger;
 
   private readonly stateStore: StateStore;
@@ -70,57 +74,50 @@ export class TelegramBotService {
   }
 
   public async launch(): Promise<void> {
-    this.bot.catch((error, ctx) => {
-      this.logger.error(
-        { error, chatId: ctx.chat?.id, updateType: ctx.updateType },
-        "Telegram bot update handler failed",
-      );
-    });
+    if (this.launched) {
+      return;
+    }
 
-    this.bot.start(async (ctx) => {
-      const subscriber = buildSubscriberFromChat(ctx.chat as SupportedChat);
-      await this.stateStore.addSubscriber(subscriber);
-      await ctx.reply(this.buildSubscriptionMessage("Subscription enabled."));
-    });
+    this.configureHandlers();
 
-    this.bot.command("subscribe", async (ctx) => {
-      const subscriber = buildSubscriberFromChat(ctx.chat as SupportedChat);
-      await this.stateStore.addSubscriber(subscriber);
-      await ctx.reply(this.buildSubscriptionMessage("Subscription enabled."));
-    });
+    this.logger.info("Authenticating with Telegram Bot API");
+    const botProfile = await this.bot.telegram.getMe();
+    this.logger.info(
+      {
+        botId: botProfile.id,
+        botUsername: botProfile.username,
+      },
+      "Telegram bot authenticated",
+    );
 
-    this.bot.command("unsubscribe", async (ctx) => {
-      const removed = await this.stateStore.removeSubscriber(String(ctx.chat.id));
-      await ctx.reply(removed ? "Subscription removed." : "This chat was not subscribed.");
-    });
+    try {
+      await this.bot.telegram.setMyCommands([
+        { command: "start", description: "Subscribe this chat to alerts" },
+        { command: "subscribe", description: "Subscribe this chat to alerts" },
+        { command: "unsubscribe", description: "Stop alerts for this chat" },
+        { command: "status", description: "Show monitor status" },
+      ]);
+      this.logger.info("Telegram bot commands registered");
+    } catch (error) {
+      this.logger.warn({ error }, "Failed to register Telegram bot commands");
+    }
 
-    this.bot.command("status", async (ctx) => {
-      const state = this.stateStore.snapshot();
-      const lines = [
-        "ZigChain monitor is running.",
-        `Tracked wallets: ${this.trackedWallets.length}`,
-        `Subscribed chats: ${state.subscribers.length}`,
-        `Last processed height: ${state.lastProcessedHeight ?? "Not initialized"}`,
-      ];
-      await ctx.reply(lines.join("\n"));
-    });
-
-    await this.bot.telegram.setMyCommands([
-      { command: "start", description: "Subscribe this chat to alerts" },
-      { command: "subscribe", description: "Subscribe this chat to alerts" },
-      { command: "unsubscribe", description: "Stop alerts for this chat" },
-      { command: "status", description: "Show monitor status" },
-    ]);
-
+    this.logger.info("Starting Telegram long polling");
     await this.bot.launch({
       dropPendingUpdates: true,
     });
 
+    this.launched = true;
     this.logger.info("Telegram bot launched");
   }
 
   public async stop(reason: string): Promise<void> {
+    if (!this.launched) {
+      return;
+    }
+
     this.bot.stop(reason);
+    this.launched = false;
     this.logger.info({ reason }, "Telegram bot stopped");
   }
 
@@ -164,13 +161,55 @@ export class TelegramBotService {
     return [prefix, "", "Tracked wallets:", wallets].join("\n");
   }
 
+  private configureHandlers(): void {
+    if (this.handlersConfigured) {
+      return;
+    }
+
+    this.logger.info("Configuring Telegram bot handlers");
+    this.bot.catch((error, ctx) => {
+      this.logger.error(
+        { error, chatId: ctx.chat?.id, updateType: ctx.updateType },
+        "Telegram bot update handler failed",
+      );
+    });
+
+    this.bot.start(async (ctx) => {
+      const subscriber = buildSubscriberFromChat(ctx.chat as SupportedChat);
+      await this.stateStore.addSubscriber(subscriber);
+      await ctx.reply(this.buildSubscriptionMessage("Subscription enabled."));
+    });
+
+    this.bot.command("subscribe", async (ctx) => {
+      const subscriber = buildSubscriberFromChat(ctx.chat as SupportedChat);
+      await this.stateStore.addSubscriber(subscriber);
+      await ctx.reply(this.buildSubscriptionMessage("Subscription enabled."));
+    });
+
+    this.bot.command("unsubscribe", async (ctx) => {
+      const removed = await this.stateStore.removeSubscriber(String(ctx.chat.id));
+      await ctx.reply(removed ? "Subscription removed." : "This chat was not subscribed.");
+    });
+
+    this.bot.command("status", async (ctx) => {
+      const state = this.stateStore.snapshot();
+      const lines = [
+        "ZigChain monitor is running.",
+        `Tracked wallets: ${this.trackedWallets.length}`,
+        `Subscribed chats: ${state.subscribers.length}`,
+      ];
+      await ctx.reply(lines.join("\n"));
+    });
+
+    this.handlersConfigured = true;
+  }
+
   private async sendWithRetry(chatId: string, message: string, alert: WalletAlert): Promise<void> {
     await retryWithBackoff(
       async () => {
         await this.bot.telegram.sendMessage(chatId, message, {
-          link_preview_options: {
-            is_disabled: true,
-          },
+          link_preview_options: { is_disabled: true },
+          parse_mode: "HTML",
         });
       },
       {

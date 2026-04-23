@@ -3,12 +3,13 @@ import { resolve } from "node:path";
 import type { TrackedWallet } from "../types/blockchain";
 
 export interface AppConfig {
+  readonly blockWorkerCount: number;
   readonly pollIntervalMs: number;
   readonly reconnectBaseDelayMs: number;
   readonly reconnectMaxDelayMs: number;
   readonly rpcRequestTimeoutMs: number;
   readonly rpcUrl: string;
-  readonly stateFilePath: string;
+  readonly subscribersFilePath: string;
   readonly trackedWallets: TrackedWallet[];
   readonly wsHeartbeatMs: number;
   readonly wsStaleMs: number;
@@ -22,6 +23,19 @@ function requireEnv(name: string): string {
     throw new Error(`Missing required environment variable: ${name}`);
   }
   return value;
+}
+
+function parsePositiveInteger(value: string | undefined, fallback: number): number {
+  if (!value) {
+    return fallback;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`Expected a positive integer but received: ${value}`);
+  }
+
+  return parsed;
 }
 
 function parseWalletList(raw: string): string[] {
@@ -80,12 +94,13 @@ export function loadConfig(): AppConfig {
   const nawaUsdcWallet = requireEnv("NAWA_USDC_WALLET");
 
   return {
+    blockWorkerCount: parsePositiveInteger(process.env.BLOCK_WORKER_COUNT?.trim(), 5),
     pollIntervalMs: 5_000,
     reconnectBaseDelayMs: 1_000,
     reconnectMaxDelayMs: 30_000,
     rpcRequestTimeoutMs: 15_000,
     rpcUrl,
-    stateFilePath: resolve(process.cwd(), "data", "state.json"),
+    subscribersFilePath: resolve(process.cwd(), "data", "subscribers.json"),
     trackedWallets: buildTrackedWallets(vaultWallets, nawaUsdcWallet),
     wsHeartbeatMs: 20_000,
     wsStaleMs: 45_000,

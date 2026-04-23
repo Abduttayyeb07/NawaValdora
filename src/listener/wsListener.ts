@@ -1,33 +1,7 @@
 import WebSocket from "ws";
 import type { Logger } from "pino";
-
-interface SubscriptionDefinition {
-  readonly id: string;
-  readonly query: string;
-}
-
-const SUBSCRIPTIONS: readonly SubscriptionDefinition[] = [
-  {
-    id: "msg-send-typeurl",
-    query: "tm.event='Tx' AND message.action='/cosmos.bank.v1beta1.MsgSend'",
-  },
-  {
-    id: "msg-send-legacy",
-    query: "tm.event='Tx' AND message.action='cosmos.bank.v1beta1.MsgSend'",
-  },
-  {
-    id: "execute-contract-typeurl",
-    query: "tm.event='Tx' AND message.action='/cosmwasm.wasm.v1.MsgExecuteContract'",
-  },
-  {
-    id: "execute-contract-legacy",
-    query: "tm.event='Tx' AND message.action='cosmwasm.wasm.v1.MsgExecuteContract'",
-  },
-  {
-    id: "new-block",
-    query: "tm.event='NewBlock'",
-  },
-] as const;
+import type { TrackedWallet } from "../types/blockchain";
+import { buildWalletScopedSubscriptions, type WalletScopedQuery } from "./walletQueries";
 
 function toHeight(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) {
@@ -101,6 +75,8 @@ export class WebsocketListener {
 
   private readonly staleMs: number;
 
+  private readonly subscriptions: readonly WalletScopedQuery[];
+
   private websocket: WebSocket | undefined;
 
   private heartbeatTimer: NodeJS.Timeout | undefined;
@@ -114,6 +90,7 @@ export class WebsocketListener {
     readonly reconnectBaseDelayMs: number;
     readonly reconnectMaxDelayMs: number;
     readonly staleMs: number;
+    readonly trackedWallets: readonly TrackedWallet[];
     readonly wsUrl: string;
   }) {
     this.heartbeatMs = options.heartbeatMs;
@@ -122,6 +99,7 @@ export class WebsocketListener {
     this.reconnectBaseDelayMs = options.reconnectBaseDelayMs;
     this.reconnectMaxDelayMs = options.reconnectMaxDelayMs;
     this.staleMs = options.staleMs;
+    this.subscriptions = buildWalletScopedSubscriptions(options.trackedWallets);
     this.wsUrl = options.wsUrl;
   }
 
@@ -157,13 +135,13 @@ export class WebsocketListener {
     websocket.on("open", () => {
       this.reconnectAttempts = 0;
       this.lastMessageAt = Date.now();
-      for (const subscription of SUBSCRIPTIONS) {
+      for (const subscription of this.subscriptions) {
         this.subscribe(subscription);
       }
       this.startHeartbeat();
       this.logger.info(
-        { subscriptionCount: SUBSCRIPTIONS.length },
-        "WebSocket connection established",
+        { subscriptionCount: this.subscriptions.length },
+        "WebSocket connection established for wallet-scoped subscriptions",
       );
     });
 
@@ -252,15 +230,20 @@ export class WebsocketListener {
     }, this.heartbeatMs);
   }
 
-  private subscribe(subscription: SubscriptionDefinition): void {
+  private subscribe(subscription: WalletScopedQuery): void {
     const websocket = this.websocket;
     if (!websocket || websocket.readyState !== WebSocket.OPEN) {
       return;
     }
 
     this.logger.info(
-      { id: subscription.id, query: subscription.query },
-      "Subscribing to WebSocket query",
+      {
+        eventKey: subscription.eventKey,
+        id: subscription.id,
+        query: subscription.query,
+        walletAddress: subscription.walletAddress,
+      },
+      "Subscribing to wallet-scoped WebSocket query",
     );
     websocket.send(
       JSON.stringify({
