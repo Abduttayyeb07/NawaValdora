@@ -4,17 +4,19 @@ import type { TrackedWallet } from "../types/blockchain";
 
 export interface AppConfig {
   readonly blockWorkerCount: number;
+  readonly googleCredentialsPath: string;
+  readonly googleSheetId: string | null;
   readonly pollIntervalMs: number;
   readonly reconnectBaseDelayMs: number;
   readonly reconnectMaxDelayMs: number;
   readonly rpcRequestTimeoutMs: number;
   readonly rpcUrl: string;
   readonly subscribersFilePath: string;
+  readonly telegramBotToken: string;
   readonly trackedWallets: TrackedWallet[];
   readonly wsHeartbeatMs: number;
   readonly wsStaleMs: number;
   readonly wsUrl: string;
-  readonly telegramBotToken: string;
 }
 
 function requireEnv(name: string): string {
@@ -95,16 +97,18 @@ export function loadConfig(): AppConfig {
 
   return {
     blockWorkerCount: parsePositiveInteger(process.env.BLOCK_WORKER_COUNT?.trim(), 5),
+    googleCredentialsPath: resolve(process.cwd(), process.env.GOOGLE_CREDENTIALS_PATH?.trim() ?? "credentials.json"),
+    googleSheetId: process.env.GOOGLE_SHEET_ID?.trim() ?? null,
     pollIntervalMs: 5_000,
     reconnectBaseDelayMs: 1_000,
     reconnectMaxDelayMs: 30_000,
     rpcRequestTimeoutMs: 15_000,
     rpcUrl,
     subscribersFilePath: resolve(process.cwd(), "data", "subscribers.json"),
+    telegramBotToken,
     trackedWallets: buildTrackedWallets(vaultWallets, nawaUsdcWallet),
     wsHeartbeatMs: 20_000,
     wsStaleMs: 45_000,
     wsUrl,
-    telegramBotToken,
   };
 }

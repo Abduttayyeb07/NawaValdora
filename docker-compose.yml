@@ -9,6 +9,7 @@ services:
       - .env
     volumes:
       - subscribers_data:/app/data
+      - ./fit-sanctum-478115-c1-828f08dbfbde.json:/app/fit-sanctum-478115-c1-828f08dbfbde.json:ro
 
 volumes:
   subscribers_data:

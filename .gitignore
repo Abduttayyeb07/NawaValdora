@@ -5,3 +5,8 @@ data/*.json
 !.gitkeep
 npm-debug.log*
 data/
+# Google service account credentials — never commit these
+*.json
+!package.json
+!package-lock.json
+!tsconfig.json

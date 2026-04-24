@@ -6,6 +6,7 @@ import { PollingFallback } from "./listener/pollingFallback";
 import { RpcClient } from "./listener/rpcClient";
 import { WebsocketListener } from "./listener/wsListener";
 import { TransactionParser } from "./parser/txParser";
+import { GoogleSheetsService } from "./services/googleSheetsService";
 import { NotificationService } from "./services/notificationService";
 import { StateStore } from "./services/stateStore";
 import { TransactionMonitorService } from "./services/transactionMonitorService";
@@ -24,7 +25,21 @@ async function main(): Promise<void> {
   await stateStore.load();
   appLogger.info("State store loaded");
 
+  let googleSheetsService: GoogleSheetsService | undefined;
+  if (config.googleSheetId) {
+    googleSheetsService = new GoogleSheetsService({
+      credentialsPath: config.googleCredentialsPath,
+      logger: appLogger,
+      spreadsheetId: config.googleSheetId,
+    });
+    await googleSheetsService.initialize();
+    appLogger.info("Google Sheets integration enabled");
+  } else {
+    appLogger.info("Google Sheets integration disabled (GOOGLE_SHEET_ID not set)");
+  }
+
   const telegramBotService = new TelegramBotService({
+    ...(googleSheetsService ? { getSheetWriteCount: () => googleSheetsService.getWriteCount() } : {}),
     logger: appLogger,
     stateStore,
     telegramBotToken: config.telegramBotToken,
@@ -32,6 +47,7 @@ async function main(): Promise<void> {
   });
 
   const notificationService = new NotificationService({
+    ...(googleSheetsService ? { googleSheetsService } : {}),
     logger: appLogger,
     telegramBotService,
   });

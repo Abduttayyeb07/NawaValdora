@@ -51,6 +51,8 @@ function isPermanentChatError(error: unknown): boolean {
 export class TelegramBotService {
   private readonly bot: Telegraf;
 
+  private readonly getSheetWriteCount: (() => number) | null;
+
   private handlersConfigured = false;
 
   private launched = false;
@@ -62,12 +64,14 @@ export class TelegramBotService {
   private readonly trackedWallets: readonly TrackedWallet[];
 
   public constructor(options: {
+    readonly getSheetWriteCount?: () => number;
     readonly logger: Logger;
     readonly stateStore: StateStore;
     readonly telegramBotToken: string;
     readonly trackedWallets: readonly TrackedWallet[];
   }) {
     this.bot = new Telegraf(options.telegramBotToken);
+    this.getSheetWriteCount = options.getSheetWriteCount ?? null;
     this.logger = options.logger.child({ component: "telegram-bot" });
     this.stateStore = options.stateStore;
     this.trackedWallets = options.trackedWallets;
@@ -91,12 +95,18 @@ export class TelegramBotService {
     );
 
     try {
-      await this.bot.telegram.setMyCommands([
+      const commands: { command: string; description: string }[] = [
         { command: "start", description: "Subscribe this chat to alerts" },
         { command: "subscribe", description: "Subscribe this chat to alerts" },
         { command: "unsubscribe", description: "Stop alerts for this chat" },
         { command: "status", description: "Show monitor status" },
-      ]);
+      ];
+
+      if (this.getSheetWriteCount) {
+        commands.push({ command: "report", description: "Show Google Sheets write count" });
+      }
+
+      await this.bot.telegram.setMyCommands(commands);
       this.logger.info("Telegram bot commands registered");
     } catch (error) {
       this.logger.warn({ error }, "Failed to register Telegram bot commands");
@@ -199,6 +209,19 @@ export class TelegramBotService {
         `Subscribed chats: ${state.subscribers.length}`,
       ];
       await ctx.reply(lines.join("\n"));
+    });
+
+    this.bot.command("report", async (ctx) => {
+      if (!this.getSheetWriteCount) {
+        await ctx.reply("Google Sheets integration is not configured.");
+        return;
+      }
+      const count = this.getSheetWriteCount();
+      await ctx.reply(
+        count === 0
+          ? "No transactions have been written to Google Sheets yet."
+          : `Google Sheets: ${count} transaction${count === 1 ? "" : "s"} written since last restart.`,
+      );
     });
 
     this.handlersConfigured = true;

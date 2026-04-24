@@ -3,6 +3,7 @@ import type { Logger } from "pino";
 import type { ContractCallAlert, SwapAlert, TransferAlert, WalletAlert } from "../types/blockchain";
 import { formatCoinList, formatTokenDescriptor } from "../utils/format";
 import type { TelegramBotService } from "../bot/telegramBot";
+import type { GoogleSheetsService } from "./googleSheetsService";
 
 function esc(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -13,21 +14,28 @@ function txLink(hash: string): string {
 }
 
 export class NotificationService {
+  private readonly googleSheetsService: GoogleSheetsService | null;
+
   private readonly logger: Logger;
 
   private readonly telegramBotService: TelegramBotService;
 
   public constructor(options: {
+    readonly googleSheetsService?: GoogleSheetsService;
     readonly logger: Logger;
     readonly telegramBotService: TelegramBotService;
   }) {
     this.logger = options.logger.child({ component: "notification-service" });
     this.telegramBotService = options.telegramBotService;
+    this.googleSheetsService = options.googleSheetsService ?? null;
   }
 
   public async sendAlert(alert: WalletAlert): Promise<void> {
     const message = this.formatAlert(alert);
-    const delivered = await this.telegramBotService.broadcastAlert(message, alert);
+    const [delivered] = await Promise.all([
+      this.telegramBotService.broadcastAlert(message, alert),
+      this.googleSheetsService?.writeAlert(alert),
+    ]);
     this.logger.info(
       { delivered, kind: alert.kind, txHash: alert.txHash, height: alert.height },
       "Alert dispatch completed",
