@@ -53,6 +53,8 @@ export class TelegramBotService {
 
   private readonly getSheetWriteCount: (() => number) | null;
 
+  private readonly runBalanceSnapshot: (() => Promise<void>) | null;
+
   private handlersConfigured = false;
 
   private launched = false;
@@ -66,12 +68,14 @@ export class TelegramBotService {
   public constructor(options: {
     readonly getSheetWriteCount?: () => number;
     readonly logger: Logger;
+    readonly runBalanceSnapshot?: () => Promise<void>;
     readonly stateStore: StateStore;
     readonly telegramBotToken: string;
     readonly trackedWallets: readonly TrackedWallet[];
   }) {
     this.bot = new Telegraf(options.telegramBotToken);
     this.getSheetWriteCount = options.getSheetWriteCount ?? null;
+    this.runBalanceSnapshot = options.runBalanceSnapshot ?? null;
     this.logger = options.logger.child({ component: "telegram-bot" });
     this.stateStore = options.stateStore;
     this.trackedWallets = options.trackedWallets;
@@ -104,6 +108,9 @@ export class TelegramBotService {
 
       if (this.getSheetWriteCount) {
         commands.push({ command: "report", description: "Show Google Sheets write count" });
+      }
+      if (this.runBalanceSnapshot) {
+        commands.push({ command: "balances", description: "Run balance snapshot now" });
       }
 
       await this.bot.telegram.setMyCommands(commands);
@@ -209,6 +216,16 @@ export class TelegramBotService {
         `Subscribed chats: ${state.subscribers.length}`,
       ];
       await ctx.reply(lines.join("\n"));
+    });
+
+    this.bot.command("balances", async (ctx) => {
+      if (!this.runBalanceSnapshot) {
+        await ctx.reply("Balance sheet is not configured.");
+        return;
+      }
+      await ctx.reply("Running balance snapshot...");
+      await this.runBalanceSnapshot();
+      await ctx.reply("Done. Check the sheet.");
     });
 
     this.bot.command("report", async (ctx) => {

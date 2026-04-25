@@ -3,9 +3,11 @@ import { resolve } from "node:path";
 import type { TrackedWallet } from "../types/blockchain";
 
 export interface AppConfig {
+  readonly balanceSheetGid: number;
   readonly blockWorkerCount: number;
   readonly googleCredentialsPath: string;
   readonly googleSheetId: string | null;
+  readonly lcdUrl: string;
   readonly pollIntervalMs: number;
   readonly reconnectBaseDelayMs: number;
   readonly reconnectMaxDelayMs: number;
@@ -96,9 +98,11 @@ export function loadConfig(): AppConfig {
   const nawaUsdcWallet = requireEnv("NAWA_USDC_WALLET");
 
   return {
+    balanceSheetGid: parsePositiveInteger(process.env.BALANCE_SHEET_GID?.trim(), 1644754287),
     blockWorkerCount: parsePositiveInteger(process.env.BLOCK_WORKER_COUNT?.trim(), 5),
     googleCredentialsPath: resolve(process.cwd(), process.env.GOOGLE_CREDENTIALS_PATH?.trim() ?? "credentials.json"),
     googleSheetId: process.env.GOOGLE_SHEET_ID?.trim() ?? null,
+    lcdUrl: process.env.LCD_URL?.trim() ?? "https://zigchain-lcd.degenter.io",
     pollIntervalMs: 5_000,
     reconnectBaseDelayMs: 1_000,
     reconnectMaxDelayMs: 30_000,

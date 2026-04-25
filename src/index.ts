@@ -6,6 +6,8 @@ import { PollingFallback } from "./listener/pollingFallback";
 import { RpcClient } from "./listener/rpcClient";
 import { WebsocketListener } from "./listener/wsListener";
 import { TransactionParser } from "./parser/txParser";
+import { BalanceService } from "./services/balanceService";
+import { BalanceSheetService } from "./services/balanceSheetService";
 import { GoogleSheetsService } from "./services/googleSheetsService";
 import { NotificationService } from "./services/notificationService";
 import { StateStore } from "./services/stateStore";
@@ -26,6 +28,8 @@ async function main(): Promise<void> {
   appLogger.info("State store loaded");
 
   let googleSheetsService: GoogleSheetsService | undefined;
+  let balanceSheetService: BalanceSheetService | undefined;
+
   if (config.googleSheetId) {
     googleSheetsService = new GoogleSheetsService({
       credentialsPath: config.googleCredentialsPath,
@@ -34,12 +38,31 @@ async function main(): Promise<void> {
     });
     await googleSheetsService.initialize();
     appLogger.info("Google Sheets integration enabled");
+
+    const balanceService = new BalanceService({
+      lcdUrl: config.lcdUrl,
+      logger: appLogger,
+    });
+
+    balanceSheetService = new BalanceSheetService({
+      balanceService,
+      credentialsPath: config.googleCredentialsPath,
+      gid: config.balanceSheetGid,
+      logger: appLogger,
+      spreadsheetId: config.googleSheetId,
+      trackedWallets: config.trackedWallets,
+    });
+
+    await balanceSheetService.initialize();
+    balanceSheetService.start();
+    appLogger.info("Balance sheet scheduler started");
   } else {
     appLogger.info("Google Sheets integration disabled (GOOGLE_SHEET_ID not set)");
   }
 
   const telegramBotService = new TelegramBotService({
     ...(googleSheetsService ? { getSheetWriteCount: () => googleSheetsService.getWriteCount() } : {}),
+    ...(balanceSheetService ? { runBalanceSnapshot: () => balanceSheetService.runSnapshot() } : {}),
     logger: appLogger,
     stateStore,
     telegramBotToken: config.telegramBotToken,
@@ -140,6 +163,7 @@ async function main(): Promise<void> {
 
     shuttingDown = true;
     appLogger.info({ signal }, "Shutting down");
+    balanceSheetService?.stop();
     pollingFallback.stop();
     websocketListener.stop();
     await telegramBotService.stop(signal);
