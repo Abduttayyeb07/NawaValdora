@@ -22,7 +22,15 @@ export function formatDirection(direction: AlertDirection): string {
   return direction;
 }
 
+const IBC_DENOMS: Record<string, { decimals: number; symbol: string }> = {
+  "ibc/6490A7EAB61059BFC1CDDEB05917DD70BDF3A611654162A1A47DB930D40D8AF4": { decimals: 6, symbol: "USDC" },
+};
+
 function getDisplayDenom(denom: string): { decimals: number; symbol: string } | null {
+  if (denom in IBC_DENOMS) {
+    return IBC_DENOMS[denom] ?? null;
+  }
+
   if (/^u[a-z][a-z0-9]+$/i.test(denom)) {
     return {
       decimals: 6,
