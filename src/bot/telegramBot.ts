@@ -138,6 +138,25 @@ export class TelegramBotService {
     this.logger.info({ reason }, "Telegram bot stopped");
   }
 
+  public async broadcastMessage(message: string): Promise<void> {
+    const subscribers = this.stateStore.listSubscribers();
+    for (const subscriber of subscribers) {
+      try {
+        await this.bot.telegram.sendMessage(subscriber.chatId, message, {
+          link_preview_options: { is_disabled: true },
+          parse_mode: "HTML",
+        });
+      } catch (error) {
+        if (isPermanentChatError(error)) {
+          await this.stateStore.removeSubscriber(subscriber.chatId);
+          this.logger.warn({ chatId: subscriber.chatId, error }, "Removed unreachable subscriber during broadcast");
+          continue;
+        }
+        this.logger.error({ chatId: subscriber.chatId, error }, "Failed to broadcast message");
+      }
+    }
+  }
+
   public async broadcastAlert(message: string, alert: WalletAlert): Promise<number> {
     const subscribers = this.stateStore.listSubscribers();
     if (subscribers.length === 0) {

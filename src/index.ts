@@ -46,6 +46,7 @@ async function main(): Promise<void> {
 
     balanceSheetService = new BalanceSheetService({
       balanceService,
+      broadcastMessage: (msg) => telegramBotService.broadcastMessage(msg),
       credentialsPath: config.googleCredentialsPath,
       gid: config.balanceSheetGid,
       logger: appLogger,

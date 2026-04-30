@@ -7,8 +7,8 @@ import type { BalanceService, WalletBalance } from "./balanceService";
 // PKT = UTC+5
 const PKT_OFFSET_MS = 5 * 60 * 60 * 1000;
 
-// 12:00 AM PKT = 19:00 UTC, 12:00 PM PKT = 07:00 UTC
-const SNAPSHOT_UTC_TIMES: [number, number][] = [[7, 0], [19, 0]];
+// 12:00 PM PKT = 07:00 UTC, 9:00 PM PKT = 16:00 UTC
+const SNAPSHOT_UTC_TIMES: [number, number][] = [[7, 0], [16, 0]];
 
 // Column A holds wallet labels; date columns start at B (index 1)
 const DATE_COL_START = 1;
@@ -49,6 +49,8 @@ function msUntilNextUtcTime(hour: number, minute: number): number {
 export class BalanceSheetService {
   private readonly balanceService: BalanceService;
 
+  private readonly broadcastMessage: ((message: string) => Promise<void>) | null;
+
   private readonly gid: number;
 
   private readonly logger: Logger;
@@ -65,6 +67,7 @@ export class BalanceSheetService {
 
   public constructor(options: {
     readonly balanceService: BalanceService;
+    readonly broadcastMessage?: (message: string) => Promise<void>;
     readonly credentialsPath: string;
     readonly gid: number;
     readonly logger: Logger;
@@ -72,6 +75,7 @@ export class BalanceSheetService {
     readonly trackedWallets: readonly TrackedWallet[];
   }) {
     this.balanceService = options.balanceService;
+    this.broadcastMessage = options.broadcastMessage ?? null;
     this.gid = options.gid;
     this.logger = options.logger.child({ component: "balance-sheet" });
     this.spreadsheetId = options.spreadsheetId;
@@ -130,6 +134,7 @@ export class BalanceSheetService {
       const nawaRow = WALLET_ROW_START + vaultWallets.length + 1;
 
       const data: Array<{ range: string; values: string[][] }> = [];
+      const reportLines: string[] = [`📊 <b>Balance Report — ${dateLabel}</b>`, ""];
 
       for (let i = 0; i < vaultWallets.length; i++) {
         const wallet = vaultWallets[i];
@@ -140,6 +145,9 @@ export class BalanceSheetService {
           range: `${this.sheetName}!${colLetter}${row}`,
           values: [[formatBalance(balance.zig, balance.usdc)]],
         });
+        reportLines.push(`<b>${wallet.label}</b>`);
+        reportLines.push(`  ZIG: ${balance.zig.toFixed(2)}`);
+        reportLines.push(`  USDC: ${balance.usdc.toFixed(2)}`);
       }
 
       if (nawaWallet) {
@@ -148,6 +156,10 @@ export class BalanceSheetService {
           range: `${this.sheetName}!${colLetter}${nawaRow}`,
           values: [[formatBalance(balance.zig, balance.usdc)]],
         });
+        reportLines.push("");
+        reportLines.push(`<b>${nawaWallet.label}</b>`);
+        reportLines.push(`  ZIG: ${balance.zig.toFixed(2)}`);
+        reportLines.push(`  USDC: ${balance.usdc.toFixed(2)}`);
       }
 
       await this.sheets.spreadsheets.values.batchUpdate({
@@ -159,6 +171,10 @@ export class BalanceSheetService {
         { colLetter, dateLabel, walletCount: data.length },
         "Balance snapshot written",
       );
+
+      if (this.broadcastMessage) {
+        await this.broadcastMessage(reportLines.join("\n"));
+      }
     } catch (error) {
       this.logger.error({ error }, "Balance snapshot failed");
     }
