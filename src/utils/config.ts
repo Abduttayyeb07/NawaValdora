@@ -63,7 +63,7 @@ function ensureUrl(url: string, name: string): string {
   }
 }
 
-function buildTrackedWallets(vaultWallets: string[], nawaWallet: string): TrackedWallet[] {
+function buildTrackedWallets(vaultWallets: string[], nawaWallet: string, vaultLabels: string[]): TrackedWallet[] {
   const seen = new Set<string>();
   const wallets: TrackedWallet[] = [];
 
@@ -75,7 +75,7 @@ function buildTrackedWallets(vaultWallets: string[], nawaWallet: string): Tracke
     wallets.push({
       address,
       kind: "vault",
-      label: `VAULT_${index + 1}`,
+      label: vaultLabels[index] ?? `Vault ${index + 1}`,
     });
   });
 
@@ -96,6 +96,10 @@ export function loadConfig(): AppConfig {
   const wsUrl = ensureUrl(requireEnv("WS_URL"), "WS_URL");
   const vaultWallets = parseWalletList(requireEnv("VAULT_WALLETS"));
   const nawaUsdcWallet = requireEnv("NAWA_USDC_WALLET");
+  const vaultLabels = (process.env.VAULT_LABELS?.trim() ?? "")
+    .split(",")
+    .map((l) => l.trim())
+    .filter(Boolean);
 
   return {
     balanceSheetGid: parsePositiveInteger(process.env.BALANCE_SHEET_GID?.trim(), 1644754287),
@@ -110,7 +114,7 @@ export function loadConfig(): AppConfig {
     rpcUrl,
     subscribersFilePath: resolve(process.cwd(), "data", "subscribers.json"),
     telegramBotToken,
-    trackedWallets: buildTrackedWallets(vaultWallets, nawaUsdcWallet),
+    trackedWallets: buildTrackedWallets(vaultWallets, nawaUsdcWallet, vaultLabels),
     wsHeartbeatMs: 20_000,
     wsStaleMs: 45_000,
     wsUrl,
