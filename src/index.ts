@@ -63,7 +63,7 @@ async function main(): Promise<void> {
 
   const telegramBotService = new TelegramBotService({
     ...(googleSheetsService ? { getSheetWriteCount: () => googleSheetsService.getWriteCount() } : {}),
-    ...(balanceSheetService ? { runBalanceSnapshot: () => balanceSheetService.runSnapshot() } : {}),
+    ...(balanceSheetService ? { fetchBalanceReport: () => balanceSheetService.fetchBalanceReport() } : {}),
     logger: appLogger,
     stateStore,
     telegramBotToken: config.telegramBotToken,

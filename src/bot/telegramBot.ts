@@ -51,9 +51,9 @@ function isPermanentChatError(error: unknown): boolean {
 export class TelegramBotService {
   private readonly bot: Telegraf;
 
-  private readonly getSheetWriteCount: (() => number) | null;
+  private readonly fetchBalanceReport: (() => Promise<string>) | null;
 
-  private readonly runBalanceSnapshot: (() => Promise<void>) | null;
+  private readonly getSheetWriteCount: (() => number) | null;
 
   private handlersConfigured = false;
 
@@ -66,16 +66,16 @@ export class TelegramBotService {
   private readonly trackedWallets: readonly TrackedWallet[];
 
   public constructor(options: {
+    readonly fetchBalanceReport?: () => Promise<string>;
     readonly getSheetWriteCount?: () => number;
     readonly logger: Logger;
-    readonly runBalanceSnapshot?: () => Promise<void>;
     readonly stateStore: StateStore;
     readonly telegramBotToken: string;
     readonly trackedWallets: readonly TrackedWallet[];
   }) {
     this.bot = new Telegraf(options.telegramBotToken);
+    this.fetchBalanceReport = options.fetchBalanceReport ?? null;
     this.getSheetWriteCount = options.getSheetWriteCount ?? null;
-    this.runBalanceSnapshot = options.runBalanceSnapshot ?? null;
     this.logger = options.logger.child({ component: "telegram-bot" });
     this.stateStore = options.stateStore;
     this.trackedWallets = options.trackedWallets;
@@ -109,8 +109,8 @@ export class TelegramBotService {
       if (this.getSheetWriteCount) {
         commands.push({ command: "report", description: "Show Google Sheets write count" });
       }
-      if (this.runBalanceSnapshot) {
-        commands.push({ command: "balances", description: "Run balance snapshot now" });
+      if (this.fetchBalanceReport) {
+        commands.push({ command: "balances", description: "Show current wallet balances" });
       }
 
       await this.bot.telegram.setMyCommands(commands);
@@ -238,13 +238,13 @@ export class TelegramBotService {
     });
 
     this.bot.command("balances", async (ctx) => {
-      if (!this.runBalanceSnapshot) {
+      if (!this.fetchBalanceReport) {
         await ctx.reply("Balance sheet is not configured.");
         return;
       }
-      await ctx.reply("Running balance snapshot...");
-      await this.runBalanceSnapshot();
-      await ctx.reply("Done. Check the sheet.");
+      await ctx.reply("Fetching balances...");
+      const report = await this.fetchBalanceReport();
+      await ctx.reply(report, { parse_mode: "HTML", link_preview_options: { is_disabled: true } });
     });
 
     this.bot.command("report", async (ctx) => {

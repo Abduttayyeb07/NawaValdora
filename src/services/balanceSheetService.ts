@@ -119,6 +119,30 @@ export class BalanceSheetService {
     this.timers.length = 0;
   }
 
+  public async fetchBalanceReport(): Promise<string> {
+    const dateLabel = pktDateLabel();
+    const vaultWallets = this.trackedWallets.filter((w) => w.kind === "vault");
+    const nawaWallet = this.trackedWallets.find((w) => w.kind === "nawa_usdc");
+    const lines: string[] = [`📊 <b>Balance Report — ${dateLabel}</b>`, ""];
+
+    for (const wallet of vaultWallets) {
+      const balance = await this.safeFetch(wallet.address);
+      lines.push(`<b>${wallet.label}</b>`);
+      lines.push(`  ZIG: ${balance.zig.toFixed(2)}`);
+      lines.push(`  USDC: ${balance.usdc.toFixed(2)}`);
+    }
+
+    if (nawaWallet) {
+      const balance = await this.safeFetch(nawaWallet.address);
+      lines.push("");
+      lines.push(`<b>${nawaWallet.label}</b>`);
+      lines.push(`  ZIG: ${balance.zig.toFixed(2)}`);
+      lines.push(`  USDC: ${balance.usdc.toFixed(2)}`);
+    }
+
+    return lines.join("\n");
+  }
+
   public async runSnapshot(): Promise<void> {
     const dateLabel = pktDateLabel();
     this.logger.info({ dateLabel }, "Running balance snapshot");
