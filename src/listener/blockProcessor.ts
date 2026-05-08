@@ -4,8 +4,7 @@ import type { TransactionParser } from "../parser/txParser";
 import type { TrackedWallet } from "../types/blockchain";
 import type { TransactionMonitorService } from "../services/transactionMonitorService";
 import { retryWithBackoff } from "../utils/retry";
-import type { RpcClient, RpcIndexedTransaction } from "./rpcClient";
-import { buildWalletTxSearchQueries, type WalletScopedQuery } from "./walletQueries";
+import type { RpcClient } from "./rpcClient";
 
 export class BlockProcessor {
   private activeWorkers = 0;
@@ -28,8 +27,6 @@ export class BlockProcessor {
 
   private readonly rpcClient: RpcClient;
 
-  private readonly searchQueries: readonly WalletScopedQuery[];
-
   private targetHeight = 0;
 
   private readonly transactionMonitorService: TransactionMonitorService;
@@ -48,7 +45,6 @@ export class BlockProcessor {
   }) {
     this.logger = options.logger.child({ component: "block-processor" });
     this.rpcClient = options.rpcClient;
-    this.searchQueries = buildWalletTxSearchQueries(options.trackedWallets);
     this.transactionMonitorService = options.transactionMonitorService;
     this.transactionParser = options.transactionParser;
     this.workerCount = options.workerCount;
@@ -168,54 +164,36 @@ export class BlockProcessor {
   }
 
   private async processBlock(height: number): Promise<void> {
-    this.logger.debug(
-      { height, queryCount: this.searchQueries.length },
-      "Searching tracked-wallet transactions for height",
-    );
+    this.logger.debug({ height }, "Fetching block for processing");
 
-    const transactionsByHash = new Map<string, RpcIndexedTransaction>();
-    for (const query of this.searchQueries) {
-      const batch = await retryWithBackoff(
-        async () => this.rpcClient.searchTransactions(query.query, height, height),
-        {
-          initialDelayMs: 500,
-          maxAttempts: 4,
-          maxDelayMs: 5_000,
-          onRetry: async (error, attempt, delayMs) => {
-            this.logger.warn(
-              {
-                attempt,
-                delayMs,
-                error,
-                eventKey: query.eventKey,
-                height,
-                query: query.query,
-                walletAddress: query.walletAddress,
-              },
-              "Retrying wallet-scoped tx_search query",
-            );
-          },
-        },
-      );
+    const [block, txResults] = await Promise.all([
+      this.rpcClient.getBlock(height),
+      this.rpcClient.getBlockResults(height),
+    ]);
 
-      for (const indexedTransaction of batch) {
-        transactionsByHash.set(indexedTransaction.hash, indexedTransaction);
-      }
+    if (block.txs.length === 0) {
+      this.logger.debug({ height }, "Empty block, skipping");
+      return;
     }
 
-    for (const indexedTransaction of transactionsByHash.values()) {
+    for (let i = 0; i < block.txs.length; i++) {
+      const txBase64 = block.txs[i];
+      if (!txBase64) continue;
+
+      const txResult = txResults[i] ?? { code: 0, events: [] };
       const transaction = this.transactionParser.parseTransaction({
-        height: indexedTransaction.height,
-        txBase64: indexedTransaction.txBase64,
-        txResult: indexedTransaction.txResult,
+        height,
+        ...(block.timestamp ? { timestamp: block.timestamp } : {}),
+        txBase64,
+        txResult,
       });
 
       await this.transactionMonitorService.handleTransaction(transaction);
     }
 
     this.logger.info(
-      { height, matchedTxCount: transactionsByHash.size },
-      "Processed tracked-wallet transactions at height",
+      { height, txCount: block.txs.length },
+      "Processed block",
     );
   }
 
