@@ -29,7 +29,7 @@ export interface RpcTxResult {
 
 export interface TrackedWallet {
   readonly address: string;
-  readonly kind: "vault" | "nawa_usdc";
+  readonly kind: "vault" | "nawa_usdc" | "pmp" | "valdora_vault";
   readonly label: string;
 }
 

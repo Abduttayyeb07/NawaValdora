@@ -63,28 +63,35 @@ function ensureUrl(url: string, name: string): string {
   }
 }
 
-function buildTrackedWallets(vaultWallets: string[], nawaWallet: string, vaultLabels: string[]): TrackedWallet[] {
+function buildTrackedWallets(options: {
+  nawaWallet: string;
+  pmpLabels: string[];
+  pmpWallets: string[];
+  valdoraWallet: string | null;
+  vaultLabels: string[];
+  vaultWallets: string[];
+}): TrackedWallet[] {
   const seen = new Set<string>();
   const wallets: TrackedWallet[] = [];
 
-  vaultWallets.forEach((address, index) => {
-    if (seen.has(address)) {
-      return;
-    }
+  const add = (address: string, kind: TrackedWallet["kind"], label: string): void => {
+    if (seen.has(address)) return;
     seen.add(address);
-    wallets.push({
-      address,
-      kind: "vault",
-      label: vaultLabels[index] ?? `Vault ${index + 1}`,
-    });
-  });
+    wallets.push({ address, kind, label });
+  };
 
-  if (!seen.has(nawaWallet)) {
-    wallets.push({
-      address: nawaWallet,
-      kind: "nawa_usdc",
-      label: "NAWA_USDC_WALLET",
-    });
+  options.vaultWallets.forEach((address, i) =>
+    add(address, "vault", options.vaultLabels[i] ?? `Vault ${i + 1}`),
+  );
+
+  add(options.nawaWallet, "nawa_usdc", "NAWA");
+
+  options.pmpWallets.forEach((address, i) =>
+    add(address, "pmp", options.pmpLabels[i] ?? `PMP ${i + 1}`),
+  );
+
+  if (options.valdoraWallet) {
+    add(options.valdoraWallet, "valdora_vault", "USDC Opportunistic Credit Vault");
   }
 
   return wallets;
@@ -97,9 +104,12 @@ export function loadConfig(): AppConfig {
   const vaultWallets = parseWalletList(requireEnv("VAULT_WALLETS"));
   const nawaUsdcWallet = requireEnv("NAWA_USDC_WALLET");
   const vaultLabels = (process.env.VAULT_LABELS?.trim() ?? "")
-    .split(",")
-    .map((l) => l.trim())
-    .filter(Boolean);
+    .split(",").map((l) => l.trim()).filter(Boolean);
+  const pmpWallets = process.env.PMP_WALLETS?.trim()
+    ? parseWalletList(process.env.PMP_WALLETS.trim()) : [];
+  const pmpLabels = (process.env.PMP_LABELS?.trim() ?? "")
+    .split(",").map((l) => l.trim()).filter(Boolean);
+  const valdoraWallet = process.env.VALDORA_WALLET?.trim() ?? null;
 
   return {
     balanceSheetGid: parsePositiveInteger(process.env.BALANCE_SHEET_GID?.trim(), 1644754287),
@@ -114,7 +124,7 @@ export function loadConfig(): AppConfig {
     rpcUrl,
     subscribersFilePath: resolve(process.cwd(), "data", "subscribers.json"),
     telegramBotToken,
-    trackedWallets: buildTrackedWallets(vaultWallets, nawaUsdcWallet, vaultLabels),
+    trackedWallets: buildTrackedWallets({ nawaWallet: nawaUsdcWallet, pmpLabels, pmpWallets, valdoraWallet, vaultLabels, vaultWallets }),
     wsHeartbeatMs: 20_000,
     wsStaleMs: 45_000,
     wsUrl,

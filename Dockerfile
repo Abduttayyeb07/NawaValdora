@@ -9,7 +9,7 @@ FROM deps AS build
 WORKDIR /app
 COPY tsconfig.json ./
 COPY src ./src
-RUN npm run build && npm prune --omit=dev
+RUN npm run build
 
 FROM node:22-alpine AS runner
 WORKDIR /app
