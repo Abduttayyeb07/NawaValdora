@@ -113,9 +113,10 @@ describe("transfer alerts", () => {
       }),
     );
     expect(alerts).toHaveLength(1);
-    expect(alerts[0]?.kind).toBe("transfer");
-    expect(alerts[0]?.direction).toBe("OUTFLOW");
-    expect(alerts[0]?.wallet.address).toBe(VAULT_1.address);
+    const alert = alerts[0];
+    expect(alert?.kind).toBe("transfer");
+    if (alert?.kind === "transfer") expect(alert.direction).toBe("OUTFLOW");
+    expect(alert?.wallet.address).toBe(VAULT_1.address);
   });
 
   it("fires INFLOW when tracked wallet receives funds (MsgSend)", async () => {
@@ -133,8 +134,9 @@ describe("transfer alerts", () => {
       }),
     );
     expect(alerts).toHaveLength(1);
-    expect(alerts[0]?.direction).toBe("INFLOW");
-    expect(alerts[0]?.wallet.address).toBe(NAWA.address);
+    const a1 = alerts[0];
+    if (a1?.kind === "transfer") expect(a1.direction).toBe("INFLOW");
+    expect(a1?.wallet.address).toBe(NAWA.address);
   });
 
   it("fires OUTFLOW + INFLOW for tracked-to-tracked transfer", async () => {
@@ -152,7 +154,7 @@ describe("transfer alerts", () => {
       }),
     );
     expect(alerts).toHaveLength(2);
-    const directions = alerts.map((a) => a.direction);
+    const directions = alerts.map((a) => a.kind !== "swap" ? a.direction : null);
     expect(directions).toContain("OUTFLOW");
     expect(directions).toContain("INFLOW");
   });
@@ -231,9 +233,10 @@ describe("event-based inflow (contract deposit)", () => {
       }),
     );
     expect(alerts).toHaveLength(1);
-    expect(alerts[0]?.kind).toBe("transfer");
-    expect(alerts[0]?.direction).toBe("INFLOW");
-    expect(alerts[0]?.wallet.address).toBe(NAWA.address);
+    const a2 = alerts[0];
+    expect(a2?.kind).toBe("transfer");
+    if (a2?.kind === "transfer") expect(a2.direction).toBe("INFLOW");
+    expect(a2?.wallet.address).toBe(NAWA.address);
   });
 
   it("does not double-alert when wallet appears in both message and events", async () => {

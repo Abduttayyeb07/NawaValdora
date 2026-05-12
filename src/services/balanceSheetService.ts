@@ -126,6 +126,7 @@ export class BalanceSheetService {
     await this.appendWalletGroup(lines, "nawa_usdc");
     await this.appendWalletGroup(lines, "pmp");
     await this.appendWalletGroup(lines, "valdora_vault");
+    await this.appendWalletGroup(lines, "smrwa");
     return lines.join("\n");
   }
 
@@ -153,17 +154,20 @@ export class BalanceSheetService {
       const nawaWallet = this.trackedWallets.find((w) => w.kind === "nawa_usdc");
       const pmpWallets = this.trackedWallets.filter((w) => w.kind === "pmp");
       const valdoraWallet = this.trackedWallets.find((w) => w.kind === "valdora_vault");
+      const smrwaWallet = this.trackedWallets.find((w) => w.kind === "smrwa");
 
       // Sheet layout (1 blank row between each group):
       // Rows 2..2+V-1        : vault wallets
       // Row  2+V+1           : nawa
       // Rows 2+V+3..2+V+3+P-1: pmp wallets
       // Row  2+V+3+P+1       : valdora
+      // Row  2+V+3+P+3       : smrwa
       const V = vaultWallets.length;
       const P = pmpWallets.length;
       const nawaRow = WALLET_ROW_START + V + 1;
       const pmpStartRow = nawaRow + 2;
       const valdoraRow = pmpStartRow + P + 1;
+      const smrwaRow = valdoraRow + 2;
 
       const data: Array<{ range: string; values: string[][] }> = [];
       const reportLines: string[] = [`📊 <b>Balance Report — ${dateLabel}</b>`, ""];
@@ -200,6 +204,14 @@ export class BalanceSheetService {
         const balance = await this.safeFetch(valdoraWallet.address);
         data.push({ range: `${this.sheetName}!${colLetter}${valdoraRow}`, values: [[formatBalance(balance.zig, balance.usdc)]] });
         reportLines.push("", `<b>${valdoraWallet.label}</b>`);
+        reportLines.push(`  ZIG: ${balance.zig.toFixed(2)}`);
+        reportLines.push(`  USDC: ${balance.usdc.toFixed(2)}`);
+      }
+
+      if (smrwaWallet) {
+        const balance = await this.safeFetch(smrwaWallet.address);
+        data.push({ range: `${this.sheetName}!${colLetter}${smrwaRow}`, values: [[formatBalance(balance.zig, balance.usdc)]] });
+        reportLines.push("", `<b>${smrwaWallet.label}</b>`);
         reportLines.push(`  ZIG: ${balance.zig.toFixed(2)}`);
         reportLines.push(`  USDC: ${balance.usdc.toFixed(2)}`);
       }

@@ -67,6 +67,7 @@ function buildTrackedWallets(options: {
   nawaWallet: string;
   pmpLabels: string[];
   pmpWallets: string[];
+  smrwaWallet: string | null;
   valdoraWallet: string | null;
   vaultLabels: string[];
   vaultWallets: string[];
@@ -94,6 +95,10 @@ function buildTrackedWallets(options: {
     add(options.valdoraWallet, "valdora_vault", "USDC Opportunistic Credit Vault");
   }
 
+  if (options.smrwaWallet) {
+    add(options.smrwaWallet, "smrwa", "SMRWA Test Wallet");
+  }
+
   return wallets;
 }
 
@@ -110,6 +115,7 @@ export function loadConfig(): AppConfig {
   const pmpLabels = (process.env.PMP_LABELS?.trim() ?? "")
     .split(",").map((l) => l.trim()).filter(Boolean);
   const valdoraWallet = process.env.VALDORA_WALLET?.trim() ?? null;
+  const smrwaWallet = process.env.SMRWA_WALLET?.trim() ?? null;
 
   return {
     balanceSheetGid: parsePositiveInteger(process.env.BALANCE_SHEET_GID?.trim(), 1644754287),
@@ -124,7 +130,7 @@ export function loadConfig(): AppConfig {
     rpcUrl,
     subscribersFilePath: resolve(process.cwd(), "data", "subscribers.json"),
     telegramBotToken,
-    trackedWallets: buildTrackedWallets({ nawaWallet: nawaUsdcWallet, pmpLabels, pmpWallets, valdoraWallet, vaultLabels, vaultWallets }),
+    trackedWallets: buildTrackedWallets({ nawaWallet: nawaUsdcWallet, pmpLabels, pmpWallets, smrwaWallet, valdoraWallet, vaultLabels, vaultWallets }),
     wsHeartbeatMs: 20_000,
     wsStaleMs: 45_000,
     wsUrl,
