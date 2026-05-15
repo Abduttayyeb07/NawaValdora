@@ -121,7 +121,7 @@ export class BalanceSheetService {
 
   public async fetchBalanceReport(): Promise<string> {
     const dateLabel = pktDateLabel();
-    const lines: string[] = [`📊 <b>Balance Report — ${dateLabel}</b>`, ""];
+    const lines: string[] = [`📊 <b>Balance Report — ${dateLabel}</b>`];
     await this.appendWalletGroup(lines, "vault");
     await this.appendWalletGroup(lines, "nawa_usdc");
     await this.appendWalletGroup(lines, "pmp");
@@ -130,15 +130,25 @@ export class BalanceSheetService {
     return lines.join("\n");
   }
 
+  private static groupHeader(kind: TrackedWallet["kind"]): string {
+    const headers: Record<TrackedWallet["kind"], string> = {
+      nawa_usdc: "💼 NAWA",
+      pmp: "📈 PMP",
+      smrwa: "🧪 SMRWA",
+      valdora_vault: "🔷 Valdora",
+      vault: "🏛 Vaults",
+    };
+    return `<b>${headers[kind]}</b>`;
+  }
+
   private async appendWalletGroup(lines: string[], kind: TrackedWallet["kind"]): Promise<void> {
     const wallets = this.trackedWallets.filter((w) => w.kind === kind);
     if (wallets.length === 0) return;
-    lines.push("");
+    lines.push("", BalanceSheetService.groupHeader(kind));
     for (const wallet of wallets) {
       const balance = await this.safeFetch(wallet.address);
       lines.push(`<b>${wallet.label}</b>`);
-      lines.push(`  ZIG: ${balance.zig.toFixed(2)}`);
-      lines.push(`  USDC: ${balance.usdc.toFixed(2)}`);
+      lines.push(`<b>ZIG</b> <code>${balance.zig.toFixed(2)}</code>  ·  <b>USDC</b> <code>${balance.usdc.toFixed(2)}</code>`);
     }
   }
 
@@ -151,69 +161,78 @@ export class BalanceSheetService {
       const colLetter = toColLetter(colIndex);
 
       const vaultWallets = this.trackedWallets.filter((w) => w.kind === "vault");
-      const nawaWallet = this.trackedWallets.find((w) => w.kind === "nawa_usdc");
+      const nawaWallets = this.trackedWallets.filter((w) => w.kind === "nawa_usdc");
       const pmpWallets = this.trackedWallets.filter((w) => w.kind === "pmp");
       const valdoraWallet = this.trackedWallets.find((w) => w.kind === "valdora_vault");
       const smrwaWallet = this.trackedWallets.find((w) => w.kind === "smrwa");
 
       // Sheet layout (1 blank row between each group):
-      // Rows 2..2+V-1        : vault wallets
-      // Row  2+V+1           : nawa
-      // Rows 2+V+3..2+V+3+P-1: pmp wallets
-      // Row  2+V+3+P+1       : valdora
-      // Row  2+V+3+P+3       : smrwa
+      // Rows 2..2+V-1              : vault wallets
+      // Rows 2+V+1..2+V+N          : nawa wallets (N = count)
+      // Rows 2+V+N+2..2+V+N+2+P-1 : pmp wallets
+      // Row  2+V+N+2+P+1           : valdora
+      // Row  2+V+N+2+P+3           : smrwa
       const V = vaultWallets.length;
+      const N = nawaWallets.length;
       const P = pmpWallets.length;
-      const nawaRow = WALLET_ROW_START + V + 1;
-      const pmpStartRow = nawaRow + 2;
+      const nawaStartRow = WALLET_ROW_START + V + 1;
+      const pmpStartRow = nawaStartRow + N + 1;
       const valdoraRow = pmpStartRow + P + 1;
       const smrwaRow = valdoraRow + 2;
 
       const data: Array<{ range: string; values: string[][] }> = [];
-      const reportLines: string[] = [`📊 <b>Balance Report — ${dateLabel}</b>`, ""];
+      const reportLines: string[] = [`📊 <b>Balance Report — ${dateLabel}</b>`];
 
+      if (vaultWallets.length > 0) {
+        reportLines.push("", BalanceSheetService.groupHeader("vault"));
+      }
       for (let i = 0; i < vaultWallets.length; i++) {
         const wallet = vaultWallets[i];
         if (!wallet) continue;
         const balance = await this.safeFetch(wallet.address);
         data.push({ range: `${this.sheetName}!${colLetter}${WALLET_ROW_START + i}`, values: [[formatBalance(balance.zig, balance.usdc)]] });
         reportLines.push(`<b>${wallet.label}</b>`);
-        reportLines.push(`  ZIG: ${balance.zig.toFixed(2)}`);
-        reportLines.push(`  USDC: ${balance.usdc.toFixed(2)}`);
+        reportLines.push(`<code>ZIG  ${balance.zig.toFixed(2)}   USDC  ${balance.usdc.toFixed(2)}</code>`);
       }
 
-      if (nawaWallet) {
-        const balance = await this.safeFetch(nawaWallet.address);
-        data.push({ range: `${this.sheetName}!${colLetter}${nawaRow}`, values: [[formatBalance(balance.zig, balance.usdc)]] });
-        reportLines.push("", `<b>${nawaWallet.label}</b>`);
-        reportLines.push(`  ZIG: ${balance.zig.toFixed(2)}`);
-        reportLines.push(`  USDC: ${balance.usdc.toFixed(2)}`);
+      if (nawaWallets.length > 0) {
+        reportLines.push("", BalanceSheetService.groupHeader("nawa_usdc"));
+      }
+      for (let i = 0; i < nawaWallets.length; i++) {
+        const wallet = nawaWallets[i];
+        if (!wallet) continue;
+        const balance = await this.safeFetch(wallet.address);
+        data.push({ range: `${this.sheetName}!${colLetter}${nawaStartRow + i}`, values: [[formatBalance(balance.zig, balance.usdc)]] });
+        reportLines.push(`<b>${wallet.label}</b>`);
+        reportLines.push(`<code>ZIG  ${balance.zig.toFixed(2)}   USDC  ${balance.usdc.toFixed(2)}</code>`);
       }
 
+      if (pmpWallets.length > 0) {
+        reportLines.push("", BalanceSheetService.groupHeader("pmp"));
+      }
       for (let i = 0; i < pmpWallets.length; i++) {
         const wallet = pmpWallets[i];
         if (!wallet) continue;
         const balance = await this.safeFetch(wallet.address);
         data.push({ range: `${this.sheetName}!${colLetter}${pmpStartRow + i}`, values: [[formatBalance(balance.zig, balance.usdc)]] });
-        reportLines.push(`${i === 0 ? "\n" : ""}<b>${wallet.label}</b>`);
-        reportLines.push(`  ZIG: ${balance.zig.toFixed(2)}`);
-        reportLines.push(`  USDC: ${balance.usdc.toFixed(2)}`);
+        reportLines.push(`<b>${wallet.label}</b>`);
+        reportLines.push(`<code>ZIG  ${balance.zig.toFixed(2)}   USDC  ${balance.usdc.toFixed(2)}</code>`);
       }
 
       if (valdoraWallet) {
         const balance = await this.safeFetch(valdoraWallet.address);
         data.push({ range: `${this.sheetName}!${colLetter}${valdoraRow}`, values: [[formatBalance(balance.zig, balance.usdc)]] });
-        reportLines.push("", `<b>${valdoraWallet.label}</b>`);
-        reportLines.push(`  ZIG: ${balance.zig.toFixed(2)}`);
-        reportLines.push(`  USDC: ${balance.usdc.toFixed(2)}`);
+        reportLines.push("", BalanceSheetService.groupHeader("valdora_vault"));
+        reportLines.push(`<b>${valdoraWallet.label}</b>`);
+        reportLines.push(`<code>ZIG  ${balance.zig.toFixed(2)}   USDC  ${balance.usdc.toFixed(2)}</code>`);
       }
 
       if (smrwaWallet) {
         const balance = await this.safeFetch(smrwaWallet.address);
         data.push({ range: `${this.sheetName}!${colLetter}${smrwaRow}`, values: [[formatBalance(balance.zig, balance.usdc)]] });
-        reportLines.push("", `<b>${smrwaWallet.label}</b>`);
-        reportLines.push(`  ZIG: ${balance.zig.toFixed(2)}`);
-        reportLines.push(`  USDC: ${balance.usdc.toFixed(2)}`);
+        reportLines.push("", BalanceSheetService.groupHeader("smrwa"));
+        reportLines.push(`<b>${smrwaWallet.label}</b>`);
+        reportLines.push(`<code>ZIG  ${balance.zig.toFixed(2)}   USDC  ${balance.usdc.toFixed(2)}</code>`);
       }
 
       await this.sheets.spreadsheets.values.batchUpdate({

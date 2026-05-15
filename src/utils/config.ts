@@ -64,6 +64,7 @@ function ensureUrl(url: string, name: string): string {
 }
 
 function buildTrackedWallets(options: {
+  nawaAdminWallet: string | null;
   nawaWallet: string;
   pmpLabels: string[];
   pmpWallets: string[];
@@ -86,6 +87,9 @@ function buildTrackedWallets(options: {
   );
 
   add(options.nawaWallet, "nawa_usdc", "NAWA");
+  if (options.nawaAdminWallet) {
+    add(options.nawaAdminWallet, "nawa_usdc", "Nawa Admin Wallet");
+  }
 
   options.pmpWallets.forEach((address, i) =>
     add(address, "pmp", options.pmpLabels[i] ?? `PMP ${i + 1}`),
@@ -108,6 +112,7 @@ export function loadConfig(): AppConfig {
   const wsUrl = ensureUrl(requireEnv("WS_URL"), "WS_URL");
   const vaultWallets = parseWalletList(requireEnv("VAULT_WALLETS"));
   const nawaUsdcWallet = requireEnv("NAWA_USDC_WALLET");
+  const nawaAdminWallet = process.env.NAWA_ADMIN_WALLET?.trim() ?? null;
   const vaultLabels = (process.env.VAULT_LABELS?.trim() ?? "")
     .split(",").map((l) => l.trim()).filter(Boolean);
   const pmpWallets = process.env.PMP_WALLETS?.trim()
@@ -130,7 +135,7 @@ export function loadConfig(): AppConfig {
     rpcUrl,
     subscribersFilePath: resolve(process.cwd(), "data", "subscribers.json"),
     telegramBotToken,
-    trackedWallets: buildTrackedWallets({ nawaWallet: nawaUsdcWallet, pmpLabels, pmpWallets, smrwaWallet, valdoraWallet, vaultLabels, vaultWallets }),
+    trackedWallets: buildTrackedWallets({ nawaAdminWallet, nawaWallet: nawaUsdcWallet, pmpLabels, pmpWallets, smrwaWallet, valdoraWallet, vaultLabels, vaultWallets }),
     wsHeartbeatMs: 20_000,
     wsStaleMs: 45_000,
     wsUrl,

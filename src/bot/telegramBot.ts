@@ -193,8 +193,31 @@ export class TelegramBotService {
   }
 
   private buildSubscriptionMessage(prefix: string): string {
-    const wallets = this.trackedWallets.map((wallet) => `- ${wallet.label}: ${wallet.address}`).join("\n");
-    return [prefix, "", "Tracked wallets:", wallets].join("\n");
+    const groups: Array<{ emoji: string; kind: TrackedWallet["kind"]; title: string }> = [
+      { emoji: "🏛", kind: "vault", title: "Vaults" },
+      { emoji: "💼", kind: "nawa_usdc", title: "NAWA" },
+      { emoji: "📈", kind: "pmp", title: "PMP" },
+      { emoji: "🔷", kind: "valdora_vault", title: "Valdora" },
+      { emoji: "🧪", kind: "smrwa", title: "SMRWA" },
+    ];
+
+    const lines: string[] = [
+      `✅ <b>${prefix}</b>`,
+      "",
+      `Monitoring <b>${this.trackedWallets.length} wallets</b>:`,
+    ];
+
+    for (const group of groups) {
+      const wallets = this.trackedWallets.filter((w) => w.kind === group.kind);
+      if (wallets.length === 0) continue;
+      lines.push("", `${group.emoji} <b>${group.title}</b>`);
+      for (const wallet of wallets) {
+        lines.push(`• <b>${wallet.label}</b>`);
+        lines.push(`  <a href="https://www.zigscan.org/address/${wallet.address}">${wallet.address}</a>`);
+      }
+    }
+
+    return lines.join("\n");
   }
 
   private configureHandlers(): void {
@@ -213,13 +236,13 @@ export class TelegramBotService {
     this.bot.start(async (ctx) => {
       const subscriber = buildSubscriberFromChat(ctx.chat as SupportedChat);
       await this.stateStore.addSubscriber(subscriber);
-      await ctx.reply(this.buildSubscriptionMessage("Subscription enabled."));
+      await ctx.reply(this.buildSubscriptionMessage("Subscription enabled."), { parse_mode: "HTML" });
     });
 
     this.bot.command("subscribe", async (ctx) => {
       const subscriber = buildSubscriberFromChat(ctx.chat as SupportedChat);
       await this.stateStore.addSubscriber(subscriber);
-      await ctx.reply(this.buildSubscriptionMessage("Subscription enabled."));
+      await ctx.reply(this.buildSubscriptionMessage("Subscription enabled."), { parse_mode: "HTML" });
     });
 
     this.bot.command("unsubscribe", async (ctx) => {
