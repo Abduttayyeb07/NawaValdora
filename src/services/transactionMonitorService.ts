@@ -118,66 +118,74 @@ export class TransactionMonitorService {
       }
     }
 
-    // Catch inflows that only appear in raw events (e.g. a third-party contract
-    // depositing funds to a tracked wallet — the tracked wallet is neither the
-    // MsgExecuteContract sender nor the contract address).
-    alerts.push(...this.buildEventInflowAlerts(transaction, alertedAddresses));
+    // Catch any transfer (inflow or outflow) that only appears in raw events.
+    // This is the catch-all safety net: every on-chain token movement emits a
+    // "transfer" event with sender/recipient regardless of message type, so even
+    // unknown/future message types are covered here.
+    alerts.push(...this.buildEventTransferAlerts(transaction, alertedAddresses));
 
     return alerts;
   }
 
-  private buildEventInflowAlerts(
+  private buildEventTransferAlerts(
     transaction: ParsedTransaction,
     alreadyAlerted: ReadonlySet<string>,
   ): TransferAlert[] {
     const alerts: TransferAlert[] = [];
 
-    // Collect per-recipient amounts from transfer events (which carry sender info).
-    // coin_received events duplicate the same transfers without sender, so prefer transfer.
-    const inflowsByRecipient = new Map<string, { amounts: NormalizedCoin[]; fromAddress: string }>();
+    // Accumulate amounts per (sender→recipient) pair. A single logical transfer
+    // can emit multiple events (fee splits, multi-hop routes, etc.).
+    const flows = new Map<string, { amounts: NormalizedCoin[]; fromAddress: string; toAddress: string }>();
 
     for (const event of transaction.rawEvents) {
-      if (event.type !== "transfer") {
-        continue;
-      }
+      if (event.type !== "transfer") continue;
 
       const attrs = Object.fromEntries(event.attributes.map((a) => [a.key, a.value]));
-      const recipient = attrs.recipient ?? "";
       const sender = attrs.sender ?? "";
+      const recipient = attrs.recipient ?? "";
       const amountStr = attrs.amount ?? "";
 
-      if (!recipient || alreadyAlerted.has(recipient)) {
-        continue;
-      }
+      if (!sender || !recipient) continue;
 
-      const wallet = this.trackedWalletsByAddress.get(recipient);
-      if (!wallet) {
-        continue;
-      }
+      const senderTracked = this.trackedWalletsByAddress.has(sender) && !alreadyAlerted.has(sender);
+      const recipientTracked = this.trackedWalletsByAddress.has(recipient) && !alreadyAlerted.has(recipient);
+      if (!senderTracked && !recipientTracked) continue;
 
-      const existing = inflowsByRecipient.get(recipient);
+      const key = `${sender}|${recipient}`;
       const parsed = parseCoinsString(amountStr);
+      const existing = flows.get(key);
       if (existing) {
         existing.amounts.push(...parsed);
       } else {
-        inflowsByRecipient.set(recipient, { amounts: parsed, fromAddress: sender });
+        flows.set(key, { amounts: parsed, fromAddress: sender, toAddress: recipient });
       }
     }
 
-    for (const [recipientAddress, { amounts, fromAddress }] of inflowsByRecipient) {
-      const wallet = this.trackedWalletsByAddress.get(recipientAddress);
-      if (!wallet) {
-        continue;
+    // Track address+direction pairs already alerted within this event scan to
+    // avoid duplicate alerts when the same wallet appears in multiple flows with
+    // the same direction (e.g. two separate senders both sending to VAULT_1).
+    // Using "address:INFLOW"/"address:OUTFLOW" so a wallet can fire both
+    // directions in the same tx (e.g. it received then forwarded in one block).
+    const eventAlerted = new Set<string>();
+
+    for (const { amounts, fromAddress, toAddress } of flows.values()) {
+      const senderWallet = this.trackedWalletsByAddress.get(fromAddress);
+      const recipientWallet = this.trackedWalletsByAddress.get(toAddress);
+
+      const outflowKey = `${fromAddress}:OUTFLOW`;
+      if (senderWallet && !alreadyAlerted.has(fromAddress) && !eventAlerted.has(outflowKey)) {
+        eventAlerted.add(outflowKey);
+        this.logger.info({ fromAddress, toAddress, txHash: transaction.hash }, "Event-based outflow detected");
+        alerts.push(this.buildTransferAlert(transaction, senderWallet, "OUTFLOW", fromAddress, toAddress, amounts));
       }
 
-      this.logger.info(
-        { fromAddress, recipient: recipientAddress, txHash: transaction.hash },
-        "Event-based inflow detected for tracked wallet",
-      );
-
-      alerts.push(
-        this.buildTransferAlert(transaction, wallet, "INFLOW", fromAddress, recipientAddress, amounts),
-      );
+      const inflowKey = `${toAddress}:INFLOW`;
+      if (recipientWallet && !alreadyAlerted.has(toAddress) && !eventAlerted.has(inflowKey)) {
+        eventAlerted.add(inflowKey);
+        const direction: AlertDirection = senderWallet?.address === recipientWallet.address ? "INTERNAL" : "INFLOW";
+        this.logger.info({ fromAddress, toAddress, txHash: transaction.hash }, "Event-based inflow detected");
+        alerts.push(this.buildTransferAlert(transaction, recipientWallet, direction, fromAddress, toAddress, amounts));
+      }
     }
 
     return alerts;

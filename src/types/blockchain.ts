@@ -40,7 +40,7 @@ export interface ParsedTransferMessage {
   readonly fromAddress: string;
   readonly kind: "transfer";
   readonly toAddress: string;
-  readonly typeUrl: "/cosmos.bank.v1beta1.MsgSend";
+  readonly typeUrl: "/cosmos.bank.v1beta1.MsgSend" | "/ibc.applications.transfer.v1.MsgTransfer";
 }
 
 export interface ParsedSwapMessage {

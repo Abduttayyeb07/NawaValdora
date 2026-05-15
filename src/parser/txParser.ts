@@ -4,6 +4,7 @@ import { fromBase64 } from "@cosmjs/encoding";
 import { MsgSend } from "cosmjs-types/cosmos/bank/v1beta1/tx";
 import { Tx } from "cosmjs-types/cosmos/tx/v1beta1/tx";
 import { MsgExecuteContract } from "cosmjs-types/cosmwasm/wasm/v1/tx";
+import { MsgTransfer } from "cosmjs-types/ibc/applications/transfer/v1/tx";
 
 import type {
   IndexedEvent,
@@ -411,6 +412,17 @@ export class TransactionParser {
           kind: "transfer",
           toAddress: message.toAddress,
           typeUrl: "/cosmos.bank.v1beta1.MsgSend",
+        };
+      }
+      case "/ibc.applications.transfer.v1.MsgTransfer": {
+        const message = MsgTransfer.decode(value);
+        const token = message.token;
+        return {
+          amounts: token ? [{ amount: token.amount, denom: token.denom }] : [],
+          fromAddress: message.sender,
+          kind: "transfer",
+          toAddress: message.receiver,
+          typeUrl: "/ibc.applications.transfer.v1.MsgTransfer",
         };
       }
       case "/cosmwasm.wasm.v1.MsgExecuteContract": {
