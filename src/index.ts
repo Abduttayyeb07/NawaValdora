@@ -35,6 +35,7 @@ async function main(): Promise<void> {
       credentialsPath: config.googleCredentialsPath,
       logger: appLogger,
       spreadsheetId: config.googleSheetId,
+      trackedWallets: config.trackedWallets,
     });
     await googleSheetsService.initialize();
     appLogger.info("Google Sheets integration enabled");
