@@ -53,7 +53,8 @@ function formatIntegerAmount(amount: string, decimals: number): string {
   const whole = padded.slice(0, -decimals);
   const fraction = padded.slice(-decimals).replace(/0+$/, "");
 
-  return fraction ? `${whole}.${fraction}` : whole;
+  const wholeWithCommas = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return fraction ? `${wholeWithCommas}.${fraction}` : wholeWithCommas;
 }
 
 export function formatCoin(coin: NormalizedCoin): string {
