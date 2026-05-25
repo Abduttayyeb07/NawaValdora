@@ -275,6 +275,30 @@ export class BalanceSheetService {
     const newColIndex = DATE_COL_START + headers.length;
     const newColLetter = toColLetter(newColIndex);
 
+    // Sheets grids default to 26 columns. Expand by 50 whenever we're about
+    // to write beyond the current boundary so we never hit the limit again.
+    const meta = await this.sheets.spreadsheets.get({ spreadsheetId: this.spreadsheetId });
+    const sheetMeta = (meta.data.sheets ?? []).find((s) => s.properties?.sheetId === this.gid);
+    const currentCols = sheetMeta?.properties?.gridProperties?.columnCount ?? 26;
+
+    if (newColIndex >= currentCols) {
+      await this.sheets.spreadsheets.batchUpdate({
+        requestBody: {
+          requests: [{
+            updateSheetProperties: {
+              fields: "gridProperties.columnCount",
+              properties: {
+                gridProperties: { columnCount: newColIndex + 50 },
+                sheetId: this.gid,
+              },
+            },
+          }],
+        },
+        spreadsheetId: this.spreadsheetId,
+      });
+      this.logger.info({ newColCount: newColIndex + 50 }, "Expanded balance sheet column count");
+    }
+
     await this.sheets.spreadsheets.values.update({
       range: `${this.sheetName}!${newColLetter}1`,
       requestBody: { values: [[dateLabel]] },
