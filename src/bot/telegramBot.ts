@@ -194,10 +194,10 @@ export class TelegramBotService {
 
   private buildSubscriptionMessage(prefix: string): string {
     const groups: Array<{ emoji: string; kind: TrackedWallet["kind"]; title: string }> = [
-      { emoji: "🏛", kind: "vault", title: "Vaults" },
+      { emoji: "🏛", kind: "valdora_vault", title: "Valdora Vaults" },
       { emoji: "💼", kind: "nawa_usdc", title: "NAWA" },
       { emoji: "📈", kind: "pmp", title: "PMP" },
-      { emoji: "🔷", kind: "valdora_vault", title: "Valdora" },
+      { emoji: "🔷", kind: "vault", title: "Vaults" },
       { emoji: "🧪", kind: "smrwa", title: "SMRWA" },
     ];
 

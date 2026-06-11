@@ -122,10 +122,10 @@ export class BalanceSheetService {
   public async fetchBalanceReport(): Promise<string> {
     const dateLabel = pktDateLabel();
     const lines: string[] = [`📊 <b>Balance Report — ${dateLabel}</b>`];
-    await this.appendWalletGroup(lines, "vault");
+    await this.appendWalletGroup(lines, "valdora_vault");
     await this.appendWalletGroup(lines, "nawa_usdc");
     await this.appendWalletGroup(lines, "pmp");
-    await this.appendWalletGroup(lines, "valdora_vault");
+    await this.appendWalletGroup(lines, "vault");
     await this.appendWalletGroup(lines, "smrwa");
     return lines.join("\n");
   }
@@ -135,8 +135,8 @@ export class BalanceSheetService {
       nawa_usdc: "💼 NAWA",
       pmp: "📈 PMP",
       smrwa: "🧪 SMRWA",
-      valdora_vault: "🔷 Valdora",
-      vault: "🏛 Vaults",
+      valdora_vault: "🏛 Valdora Vaults",
+      vault: "🔷 Vaults",
     };
     return `<b>${headers[kind]}</b>`;
   }
@@ -160,34 +160,35 @@ export class BalanceSheetService {
       const colIndex = await this.findOrCreateDateColumn(dateLabel);
       const colLetter = toColLetter(colIndex);
 
-      const vaultWallets = this.trackedWallets.filter((w) => w.kind === "vault");
+      const valdoraWallets = this.trackedWallets.filter((w) => w.kind === "valdora_vault");
       const nawaWallets = this.trackedWallets.filter((w) => w.kind === "nawa_usdc");
       const pmpWallets = this.trackedWallets.filter((w) => w.kind === "pmp");
-      const valdoraWallet = this.trackedWallets.find((w) => w.kind === "valdora_vault");
+      const vaultWallets = this.trackedWallets.filter((w) => w.kind === "vault");
       const smrwaWallet = this.trackedWallets.find((w) => w.kind === "smrwa");
 
       // Sheet layout (1 blank row between each group):
-      // Rows 2..2+V-1              : vault wallets
-      // Rows 2+V+1..2+V+N          : nawa wallets (N = count)
-      // Rows 2+V+N+2..2+V+N+2+P-1 : pmp wallets
-      // Row  2+V+N+2+P+1           : valdora
-      // Row  2+V+N+2+P+3           : smrwa
-      const V = vaultWallets.length;
+      // Rows 2..2+VD-1                  : valdora_vault wallets (VD = count)
+      // Rows 2+VD+1..2+VD+N             : nawa wallets (N = count)
+      // Rows 2+VD+N+2..2+VD+N+P+1       : pmp wallets (P = count)
+      // Rows 2+VD+N+P+3..2+VD+N+P+V+2   : vault wallets (V = count)
+      // Row  2+VD+N+P+V+4               : smrwa
+      const VD = valdoraWallets.length;
       const N = nawaWallets.length;
       const P = pmpWallets.length;
-      const nawaStartRow = WALLET_ROW_START + V + 1;
+      const V = vaultWallets.length;
+      const nawaStartRow = WALLET_ROW_START + VD + 1;
       const pmpStartRow = nawaStartRow + N + 1;
-      const valdoraRow = pmpStartRow + P + 1;
-      const smrwaRow = valdoraRow + 2;
+      const vaultStartRow = pmpStartRow + P + 1;
+      const smrwaRow = vaultStartRow + V + 1;
 
       const data: Array<{ range: string; values: string[][] }> = [];
       const reportLines: string[] = [`📊 <b>Balance Report — ${dateLabel}</b>`];
 
-      if (vaultWallets.length > 0) {
-        reportLines.push("", BalanceSheetService.groupHeader("vault"));
+      if (valdoraWallets.length > 0) {
+        reportLines.push("", BalanceSheetService.groupHeader("valdora_vault"));
       }
-      for (let i = 0; i < vaultWallets.length; i++) {
-        const wallet = vaultWallets[i];
+      for (let i = 0; i < valdoraWallets.length; i++) {
+        const wallet = valdoraWallets[i];
         if (!wallet) continue;
         const balance = await this.safeFetch(wallet.address);
         data.push({ range: `${this.sheetName}!${colLetter}${WALLET_ROW_START + i}`, values: [[formatBalance(balance.zig, balance.usdc)]] });
@@ -219,11 +220,15 @@ export class BalanceSheetService {
         reportLines.push(`<code>ZIG  ${balance.zig.toFixed(2)}   USDC  ${balance.usdc.toFixed(2)}</code>`);
       }
 
-      if (valdoraWallet) {
-        const balance = await this.safeFetch(valdoraWallet.address);
-        data.push({ range: `${this.sheetName}!${colLetter}${valdoraRow}`, values: [[formatBalance(balance.zig, balance.usdc)]] });
-        reportLines.push("", BalanceSheetService.groupHeader("valdora_vault"));
-        reportLines.push(`<b>${valdoraWallet.label}</b>`);
+      if (vaultWallets.length > 0) {
+        reportLines.push("", BalanceSheetService.groupHeader("vault"));
+      }
+      for (let i = 0; i < vaultWallets.length; i++) {
+        const wallet = vaultWallets[i];
+        if (!wallet) continue;
+        const balance = await this.safeFetch(wallet.address);
+        data.push({ range: `${this.sheetName}!${colLetter}${vaultStartRow + i}`, values: [[formatBalance(balance.zig, balance.usdc)]] });
+        reportLines.push(`<b>${wallet.label}</b>`);
         reportLines.push(`<code>ZIG  ${balance.zig.toFixed(2)}   USDC  ${balance.usdc.toFixed(2)}</code>`);
       }
 
