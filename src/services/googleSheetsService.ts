@@ -119,12 +119,18 @@ export class GoogleSheetsService {
 
     try {
       const row = this.buildRow(alert);
-      await this.sheets.spreadsheets.values.append({
-        range: sheetRange(sheetName, "A1"),
-        requestBody: { values: [row] },
-        spreadsheetId: this.spreadsheetId,
-        valueInputOption: "RAW",
-      });
+      const timeout = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("Sheets write timeout")), 20_000),
+      );
+      await Promise.race([
+        this.sheets.spreadsheets.values.append({
+          range: sheetRange(sheetName, "A1"),
+          requestBody: { values: [row] },
+          spreadsheetId: this.spreadsheetId,
+          valueInputOption: "RAW",
+        }),
+        timeout,
+      ]);
       this.writeCount += 1;
       this.logger.info(
         { height: alert.height, sheet: sheetName, txHash: alert.txHash, writeCount: this.writeCount },

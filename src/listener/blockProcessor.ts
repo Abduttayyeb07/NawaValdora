@@ -15,6 +15,8 @@ export class BlockProcessor {
 
   private currentHeight = 0;
 
+  private readonly heightFailCounts = new Map<number, number>();
+
   private readonly inFlightHeights = new Set<number>();
 
   private latestObservedHeight = 0;
@@ -66,11 +68,11 @@ export class BlockProcessor {
       return;
     }
 
-    const previousTarget = this.targetHeight;
     this.latestObservedHeight = Math.max(this.latestObservedHeight, height);
     this.targetHeight = this.latestObservedHeight;
 
-    const addedHeights = this.enqueuePendingHeights(Math.max(previousTarget + 1, this.currentHeight + 1));
+    // Always fill from currentHeight+1 so gaps caused by stuck blocks are healed.
+    const addedHeights = this.enqueuePendingHeights(this.currentHeight + 1);
     this.logger.info(
       {
         activeWorkers: this.activeWorkers,
@@ -232,11 +234,23 @@ export class BlockProcessor {
       this.completedHeights.add(height);
       await this.queueCheckpointAdvance();
     } catch (error) {
-      this.logger.error(
-        { error, height },
-        "Block worker failed after retries; re-queueing height",
-      );
-      this.pendingHeights.unshift(height);
+      const failCount = (this.heightFailCounts.get(height) ?? 0) + 1;
+      if (failCount >= 3) {
+        this.logger.error(
+          { error, failCount, height },
+          "Block permanently failed; skipping to advance checkpoint",
+        );
+        this.heightFailCounts.delete(height);
+        this.completedHeights.add(height);
+        await this.queueCheckpointAdvance();
+      } else {
+        this.heightFailCounts.set(height, failCount);
+        this.logger.error(
+          { error, failCount, height },
+          "Block worker failed after retries; re-queueing height",
+        );
+        this.pendingHeights.unshift(height);
+      }
     } finally {
       this.inFlightHeights.delete(height);
       this.activeWorkers = Math.max(0, this.activeWorkers - 1);

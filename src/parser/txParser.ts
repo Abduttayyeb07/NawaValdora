@@ -379,7 +379,13 @@ export class TransactionParser {
     const decodedTx = Tx.decode(txBytes);
     const rawEvents = normalizeEvents(options.txResult?.events ?? []);
     const messages = (decodedTx.body?.messages ?? [])
-      .map((message) => this.parseMessage(message.typeUrl, message.value, rawEvents))
+      .map((message) => {
+        try {
+          return this.parseMessage(message.typeUrl, message.value, rawEvents);
+        } catch {
+          return null;
+        }
+      })
       .filter((message): message is ParsedMessage => message !== null);
 
     const memo = decodedTx.body?.memo?.trim() ? decodedTx.body.memo.trim() : undefined;

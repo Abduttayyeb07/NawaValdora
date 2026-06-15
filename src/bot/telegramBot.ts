@@ -31,6 +31,25 @@ function buildSubscriberFromChat(chat: SupportedChat): TelegramSubscriber {
   };
 }
 
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  maxAttempts = 3,
+  delayMs = 5_000,
+): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      if (attempt < maxAttempts) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs * attempt));
+      }
+    }
+  }
+  throw lastError;
+}
+
 function isPermanentChatError(error: unknown): boolean {
   if (typeof error !== "object" || error === null) {
     return false;
@@ -142,17 +161,19 @@ export class TelegramBotService {
     const subscribers = this.stateStore.listSubscribers();
     for (const subscriber of subscribers) {
       try {
-        await this.bot.telegram.sendMessage(subscriber.chatId, message, {
-          link_preview_options: { is_disabled: true },
-          parse_mode: "HTML",
-        });
+        await withRetry(() =>
+          this.bot.telegram.sendMessage(subscriber.chatId, message, {
+            link_preview_options: { is_disabled: true },
+            parse_mode: "HTML",
+          }),
+        );
       } catch (error) {
         if (isPermanentChatError(error)) {
           await this.stateStore.removeSubscriber(subscriber.chatId);
           this.logger.warn({ chatId: subscriber.chatId, error }, "Removed unreachable subscriber during broadcast");
           continue;
         }
-        this.logger.error({ chatId: subscriber.chatId, error }, "Failed to broadcast message");
+        this.logger.error({ chatId: subscriber.chatId, error }, "Failed to broadcast message after retries");
       }
     }
   }
