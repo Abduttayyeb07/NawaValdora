@@ -122,7 +122,15 @@ export class TransactionMonitorService {
     // This is the catch-all safety net: every on-chain token movement emits a
     // "transfer" event with sender/recipient regardless of message type, so even
     // unknown/future message types are covered here.
-    alerts.push(...this.buildEventTransferAlerts(transaction, alertedAddresses));
+    const eventTransferAlerts = this.buildEventTransferAlerts(transaction, alertedAddresses);
+    for (const a of eventTransferAlerts) alertedAddresses.add(a.wallet.address);
+    alerts.push(...eventTransferAlerts);
+
+    // Detect vault deposit/withdraw events emitted by CosmWasm vault contracts.
+    // Externally-managed vaults record deposits via wasm events but never emit a
+    // standard transfer event to the funds_manager address, so they are invisible
+    // to the transfer-event scanner above.
+    alerts.push(...this.buildVaultEventAlerts(transaction, alertedAddresses));
 
     return alerts;
   }
@@ -300,5 +308,48 @@ export class TransactionMonitorService {
       txHash: transaction.hash,
       wallet,
     };
+  }
+
+  private buildVaultEventAlerts(
+    transaction: ParsedTransaction,
+    alreadyAlerted: ReadonlySet<string>,
+  ): TransferAlert[] {
+    const alerts: TransferAlert[] = [];
+    const eventAlerted = new Set<string>();
+
+    for (const event of transaction.rawEvents) {
+      const isDeposit = event.type === "wasm-vault_deposit";
+      const isWithdraw = event.type === "wasm-vault_withdraw";
+      if (!isDeposit && !isWithdraw) continue;
+
+      const attrs = Object.fromEntries(event.attributes.map((a) => [a.key, a.value]));
+      const fundsManager = attrs.funds_manager ?? "";
+      const user = attrs.user ?? "";
+      const assetAmount = attrs.asset_amount ?? "";
+      const assetDenom = attrs.asset_denom ?? "";
+
+      if (!fundsManager) continue;
+      if (alreadyAlerted.has(fundsManager) || eventAlerted.has(fundsManager)) continue;
+
+      const wallet = this.trackedWalletsByAddress.get(fundsManager);
+      if (!wallet) continue;
+
+      const amounts: NormalizedCoin[] =
+        assetAmount && assetDenom ? [{ amount: assetAmount, denom: assetDenom }] : [];
+
+      const direction: AlertDirection = isDeposit ? "INFLOW" : "OUTFLOW";
+      const fromAddress = isDeposit ? user : fundsManager;
+      const toAddress = isDeposit ? fundsManager : user;
+
+      this.logger.info(
+        { direction, fundsManager, txHash: transaction.hash, user },
+        "Vault wasm event detected for tracked funds_manager",
+      );
+
+      eventAlerted.add(fundsManager);
+      alerts.push(this.buildTransferAlert(transaction, wallet, direction, fromAddress, toAddress, amounts));
+    }
+
+    return alerts;
   }
 }

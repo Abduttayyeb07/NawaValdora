@@ -863,3 +863,134 @@ describe("adversarial event shapes", () => {
     expect(direction(alerts[0]!)).toBe("INFLOW");
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// VAULT WASM EVENTS (wasm-vault_deposit / wasm-vault_withdraw)
+// Externally-managed vaults don't emit a standard transfer event to the
+// funds_manager wallet, so detection relies on the wasm event attributes.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const VAULT_CONTRACT = "zig1mayx7wkzensav40j3qc8c5lh6s884jlhsu0c0js058t4u9xcg0mql58gkq";
+
+describe("vault wasm events", () => {
+  it("VW-01  wasm-vault_deposit with funds_manager=tracked wallet → INFLOW (block 9633957 repro)", async () => {
+    // Exact event shape from the missed tx at block 9633957
+    await service.handleTransaction(makeTx({
+      hash: "0A8411FF",
+      height: 9633957,
+      messages: [{ contract: VAULT_CONTRACT, decodedMsg: { deposit: {} }, funds: [], kind: "contract_call", rawPayload: '{"deposit":{}}', sender: UNTRACKED, summary: "deposit", typeUrl: "/cosmwasm.wasm.v1.MsgExecuteContract" }],
+      rawEvents: [
+        { type: "wasm-vault_deposit", attributes: [
+          { key: "_contract_address", value: VAULT_CONTRACT },
+          { key: "user",              value: UNTRACKED },
+          { key: "vault_type",        value: "externally_managed" },
+          { key: "asset_denom",       value: USDC_DENOM },
+          { key: "asset_amount",      value: "249999077841" },
+          { key: "funds_manager",     value: VALDORA.address },
+          { key: "block_height",      value: "9633957" },
+        ]},
+      ],
+    }));
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]?.wallet.address).toBe(VALDORA.address);
+    expect(direction(alerts[0]!)).toBe("INFLOW");
+    expect(alerts[0]?.kind).toBe("transfer");
+    if (alerts[0]?.kind === "transfer") {
+      expect(alerts[0].amounts).toEqual([{ amount: "249999077841", denom: USDC_DENOM }]);
+      expect(alerts[0].fromAddress).toBe(UNTRACKED);
+      expect(alerts[0].toAddress).toBe(VALDORA.address);
+    }
+  });
+
+  it("VW-02  wasm-vault_withdraw with funds_manager=tracked wallet → OUTFLOW", async () => {
+    await service.handleTransaction(makeTx({
+      hash: "VW02",
+      messages: [],
+      rawEvents: [
+        { type: "wasm-vault_withdraw", attributes: [
+          { key: "_contract_address", value: VAULT_CONTRACT },
+          { key: "user",              value: UNTRACKED },
+          { key: "vault_type",        value: "externally_managed" },
+          { key: "asset_denom",       value: USDC_DENOM },
+          { key: "asset_amount",      value: "100000000000" },
+          { key: "funds_manager",     value: VALDORA.address },
+        ]},
+      ],
+    }));
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]?.wallet.address).toBe(VALDORA.address);
+    expect(direction(alerts[0]!)).toBe("OUTFLOW");
+  });
+
+  it("VW-03  wasm-vault_deposit with untracked funds_manager → no alert", async () => {
+    await service.handleTransaction(makeTx({
+      hash: "VW03",
+      messages: [],
+      rawEvents: [
+        { type: "wasm-vault_deposit", attributes: [
+          { key: "user",          value: UNTRACKED },
+          { key: "asset_denom",   value: USDC_DENOM },
+          { key: "asset_amount",  value: "500000000" },
+          { key: "funds_manager", value: UNTRACKED_2 },
+        ]},
+      ],
+    }));
+    expect(alerts).toHaveLength(0);
+  });
+
+  it("VW-04  wasm-vault_deposit missing funds_manager attribute → no crash, no alert", async () => {
+    await service.handleTransaction(makeTx({
+      hash: "VW04",
+      messages: [],
+      rawEvents: [
+        { type: "wasm-vault_deposit", attributes: [
+          { key: "user",         value: UNTRACKED },
+          { key: "asset_denom",  value: USDC_DENOM },
+          { key: "asset_amount", value: "500000000" },
+          // no funds_manager
+        ]},
+      ],
+    }));
+    expect(alerts).toHaveLength(0);
+  });
+
+  it("VW-05  two wasm-vault_deposit events same funds_manager in one tx → one alert (deduplicated)", async () => {
+    await service.handleTransaction(makeTx({
+      hash: "VW05",
+      messages: [],
+      rawEvents: [
+        { type: "wasm-vault_deposit", attributes: [
+          { key: "user", value: UNTRACKED }, { key: "asset_denom", value: USDC_DENOM },
+          { key: "asset_amount", value: "100000000" }, { key: "funds_manager", value: VALDORA.address },
+        ]},
+        { type: "wasm-vault_deposit", attributes: [
+          { key: "user", value: UNTRACKED_2 }, { key: "asset_denom", value: USDC_DENOM },
+          { key: "asset_amount", value: "200000000" }, { key: "funds_manager", value: VALDORA.address },
+        ]},
+      ],
+    }));
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]?.wallet.address).toBe(VALDORA.address);
+  });
+
+  it("VW-06  wasm-vault_deposit AND matching transfer event → one alert, not two", async () => {
+    // If somehow both events appear (on-chain edge case), dedup must fire only once.
+    await service.handleTransaction(makeTx({
+      hash: "VW06",
+      messages: [],
+      rawEvents: [
+        { type: "transfer", attributes: [
+          { key: "sender", value: UNTRACKED }, { key: "recipient", value: VALDORA.address },
+          { key: "amount", value: `100000000${USDC_DENOM}` },
+        ]},
+        { type: "wasm-vault_deposit", attributes: [
+          { key: "user", value: UNTRACKED }, { key: "asset_denom", value: USDC_DENOM },
+          { key: "asset_amount", value: "100000000" }, { key: "funds_manager", value: VALDORA.address },
+        ]},
+      ],
+    }));
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]?.wallet.address).toBe(VALDORA.address);
+    expect(direction(alerts[0]!)).toBe("INFLOW");
+  });
+});
