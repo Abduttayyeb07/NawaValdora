@@ -7,8 +7,8 @@ import type { BalanceService, WalletBalance } from "./balanceService";
 // PKT = UTC+5
 const PKT_OFFSET_MS = 5 * 60 * 60 * 1000;
 
-// 12:00 PM PKT = 07:00 UTC, 9:00 PM PKT = 16:00 UTC
-const SNAPSHOT_UTC_TIMES: [number, number][] = [[7, 0], [16, 0]];
+// 9:00 AM PKT = 04:00 UTC, 12:00 PM PKT = 07:00 UTC
+const SNAPSHOT_UTC_TIMES: [number, number][] = [[4, 0], [7, 0]];
 
 // Column A holds wallet labels; date columns start at B (index 1)
 const DATE_COL_START = 1;
@@ -34,6 +34,15 @@ function toColLetter(index: number): string {
 
 function formatBalance(zig: number, usdc: number): string {
   return `${zig.toFixed(2)} ZIG / ${usdc.toFixed(2)} USDC`;
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`Sheets timeout: ${label}`)), ms),
+    ),
+  ]);
 }
 
 function msUntilNextUtcTime(hour: number, minute: number): number {
@@ -240,10 +249,14 @@ export class BalanceSheetService {
         reportLines.push(`<code>ZIG  ${balance.zig.toFixed(2)}   USDC  ${balance.usdc.toFixed(2)}</code>`);
       }
 
-      await this.sheets.spreadsheets.values.batchUpdate({
-        requestBody: { data, valueInputOption: "RAW" },
-        spreadsheetId: this.spreadsheetId,
-      });
+      await withTimeout(
+        this.sheets.spreadsheets.values.batchUpdate({
+          requestBody: { data, valueInputOption: "RAW" },
+          spreadsheetId: this.spreadsheetId,
+        }),
+        20_000,
+        "batchUpdate balances",
+      );
 
       this.logger.info({ colLetter, dateLabel, walletCount: data.length }, "Balance snapshot written");
 
@@ -265,10 +278,14 @@ export class BalanceSheetService {
   }
 
   private async findOrCreateDateColumn(dateLabel: string): Promise<number> {
-    const response = await this.sheets.spreadsheets.values.get({
-      range: `${this.sheetName}!B1:ZZ1`,
-      spreadsheetId: this.spreadsheetId,
-    });
+    const response = await withTimeout(
+      this.sheets.spreadsheets.values.get({
+        range: `${this.sheetName}!B1:ZZ1`,
+        spreadsheetId: this.spreadsheetId,
+      }),
+      20_000,
+      "values.get header row",
+    );
 
     const headers = (response.data.values?.[0] ?? []) as string[];
     const existing = headers.indexOf(dateLabel);
@@ -282,34 +299,46 @@ export class BalanceSheetService {
 
     // Sheets grids default to 26 columns. Expand by 50 whenever we're about
     // to write beyond the current boundary so we never hit the limit again.
-    const meta = await this.sheets.spreadsheets.get({ spreadsheetId: this.spreadsheetId });
+    const meta = await withTimeout(
+      this.sheets.spreadsheets.get({ spreadsheetId: this.spreadsheetId }),
+      20_000,
+      "spreadsheets.get column count",
+    );
     const sheetMeta = (meta.data.sheets ?? []).find((s) => s.properties?.sheetId === this.gid);
     const currentCols = sheetMeta?.properties?.gridProperties?.columnCount ?? 26;
 
     if (newColIndex >= currentCols) {
-      await this.sheets.spreadsheets.batchUpdate({
-        requestBody: {
-          requests: [{
-            updateSheetProperties: {
-              fields: "gridProperties.columnCount",
-              properties: {
-                gridProperties: { columnCount: newColIndex + 50 },
-                sheetId: this.gid,
+      await withTimeout(
+        this.sheets.spreadsheets.batchUpdate({
+          requestBody: {
+            requests: [{
+              updateSheetProperties: {
+                fields: "gridProperties.columnCount",
+                properties: {
+                  gridProperties: { columnCount: newColIndex + 50 },
+                  sheetId: this.gid,
+                },
               },
-            },
-          }],
-        },
-        spreadsheetId: this.spreadsheetId,
-      });
+            }],
+          },
+          spreadsheetId: this.spreadsheetId,
+        }),
+        20_000,
+        "batchUpdate expand columns",
+      );
       this.logger.info({ newColCount: newColIndex + 50 }, "Expanded balance sheet column count");
     }
 
-    await this.sheets.spreadsheets.values.update({
-      range: `${this.sheetName}!${newColLetter}1`,
-      requestBody: { values: [[dateLabel]] },
-      spreadsheetId: this.spreadsheetId,
-      valueInputOption: "RAW",
-    });
+    await withTimeout(
+      this.sheets.spreadsheets.values.update({
+        range: `${this.sheetName}!${newColLetter}1`,
+        requestBody: { values: [[dateLabel]] },
+        spreadsheetId: this.spreadsheetId,
+        valueInputOption: "RAW",
+      }),
+      20_000,
+      "values.update date header",
+    );
 
     this.logger.info({ dateLabel, newColLetter }, "Created new date column in balance sheet");
     return newColIndex;
