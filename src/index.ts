@@ -182,6 +182,6 @@ async function main(): Promise<void> {
 }
 
 void main().catch((error) => {
-  logger.fatal({ error }, "Application failed to start");
+  logger.fatal({ err: error }, "Application failed to start");
   process.exit(1);
 });
