@@ -47,6 +47,14 @@ export class PollingFallback {
     this.logger.info("Polling fallback stopped");
   }
 
+  public triggerNow(): void {
+    void this.rpcClient.getLatestHeight().then((height) => {
+      this.onHeight(height);
+    }).catch((error) => {
+      this.logger.error({ error }, "Triggered poll failed");
+    });
+  }
+
   private async loop(): Promise<void> {
     while (!this.stopped) {
       try {

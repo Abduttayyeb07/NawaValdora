@@ -52,15 +52,31 @@ export class BlockProcessor {
     this.workerCount = options.workerCount;
   }
 
-  public async initialize(): Promise<void> {
+  public async initialize(lookbackBlocks = 0): Promise<void> {
     const latestHeight = await this.rpcClient.getLatestHeight();
-    this.currentHeight = latestHeight;
     this.latestObservedHeight = latestHeight;
     this.targetHeight = latestHeight;
+    this.currentHeight = lookbackBlocks > 0
+      ? Math.max(0, latestHeight - lookbackBlocks)
+      : latestHeight;
+
     this.logger.info(
-      { height: latestHeight, workerCount: this.workerCount },
+      {
+        height: latestHeight,
+        ...(lookbackBlocks > 0 ? { backfillFrom: this.currentHeight + 1, lookbackBlocks } : {}),
+        workerCount: this.workerCount,
+      },
       "Initialized checkpoint from current chain height",
     );
+
+    if (lookbackBlocks > 0) {
+      const added = this.enqueuePendingHeights(this.currentHeight + 1);
+      this.logger.info(
+        { added, fromHeight: this.currentHeight + 1, toHeight: latestHeight },
+        "Startup backfill queued",
+      );
+      this.ensureWorkers();
+    }
   }
 
   public scheduleCatchUp(height: number): void {

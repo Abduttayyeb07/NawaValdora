@@ -100,28 +100,28 @@ async function main(): Promise<void> {
   });
 
   appLogger.info("Initializing block processor");
-  await blockProcessor.initialize();
+  await blockProcessor.initialize(100);
 
   const scheduleHeight = (height: number): void => {
     blockProcessor.scheduleCatchUp(height);
   };
-
-  const websocketListener = new WebsocketListener({
-    heartbeatMs: config.wsHeartbeatMs,
-    logger: appLogger,
-    onHeight: scheduleHeight,
-    reconnectBaseDelayMs: config.reconnectBaseDelayMs,
-    reconnectMaxDelayMs: config.reconnectMaxDelayMs,
-    staleMs: config.wsStaleMs,
-    trackedWallets: config.trackedWallets,
-    wsUrl: config.wsUrl,
-  });
 
   const pollingFallback = new PollingFallback({
     intervalMs: config.pollIntervalMs,
     logger: appLogger,
     onHeight: scheduleHeight,
     rpcClient,
+  });
+
+  const websocketListener = new WebsocketListener({
+    heartbeatMs: config.wsHeartbeatMs,
+    logger: appLogger,
+    onHeight: () => { pollingFallback.triggerNow(); },
+    reconnectBaseDelayMs: config.reconnectBaseDelayMs,
+    reconnectMaxDelayMs: config.reconnectMaxDelayMs,
+    staleMs: config.wsStaleMs,
+    trackedWallets: config.trackedWallets,
+    wsUrl: config.wsUrl,
   });
 
   appLogger.info("Starting WebSocket listener");
