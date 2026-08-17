@@ -68,6 +68,18 @@ export class BlockProcessor {
       return;
     }
 
+    // Reject heights that are unrealistically far ahead of what we've seen —
+    // this guards against a WS node being ahead of the HTTP RPC node, which
+    // would cause every fetch in that range to fail with a 500 error.
+    const MAX_LOOKAHEAD = 500;
+    if (this.latestObservedHeight > 0 && height > this.latestObservedHeight + MAX_LOOKAHEAD) {
+      this.logger.warn(
+        { height, latestObservedHeight: this.latestObservedHeight, maxLookahead: MAX_LOOKAHEAD },
+        "Ignoring suspiciously large height jump from WebSocket",
+      );
+      return;
+    }
+
     this.latestObservedHeight = Math.max(this.latestObservedHeight, height);
     this.targetHeight = this.latestObservedHeight;
 
