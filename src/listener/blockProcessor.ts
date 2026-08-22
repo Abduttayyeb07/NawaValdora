@@ -118,6 +118,15 @@ export class BlockProcessor {
     return this.currentHeight;
   }
 
+  public startBackfill(startHeight: number, endHeight: number): void {
+    this.currentHeight = startHeight - 1;
+    this.latestObservedHeight = endHeight;
+    this.targetHeight = endHeight;
+    const added = this.enqueuePendingHeights(startHeight);
+    this.logger.info({ added, endHeight, startHeight }, "Backfill range queued");
+    this.ensureWorkers();
+  }
+
   private async advanceCheckpoint(): Promise<void> {
     let nextHeight = this.currentHeight + 1;
     let advancedTo = this.currentHeight;
