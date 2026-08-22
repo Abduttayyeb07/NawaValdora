@@ -8,7 +8,7 @@ import type { BalanceService, WalletBalance } from "./balanceService";
 const PKT_OFFSET_MS = 5 * 60 * 60 * 1000;
 
 // 9:00 AM PKT = 04:00 UTC, 12:00 PM PKT = 07:00 UTC
-const SNAPSHOT_UTC_TIMES: [number, number][] = [[4, 0], [7, 0]];
+const SNAPSHOT_UTC_TIMES: [number, number][] = [[7, 0], [16, 0]];
 
 // Column A holds wallet labels; date columns start at B (index 1)
 const DATE_COL_START = 1;
