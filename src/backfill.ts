@@ -12,7 +12,7 @@ import { logger } from "./utils/logger";
 
 const START_HEIGHT = parseInt(process.env.BACKFILL_START ?? "0", 10);
 const END_HEIGHT   = parseInt(process.env.BACKFILL_END   ?? "0", 10);
-const WORKER_COUNT = 10;
+const WORKER_COUNT = parseInt(process.env.BACKFILL_WORKERS ?? "20", 10);
 
 if (!START_HEIGHT || !END_HEIGHT || START_HEIGHT >= END_HEIGHT) {
   logger.fatal(
