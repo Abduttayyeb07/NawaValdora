@@ -26,9 +26,20 @@ const IBC_DENOMS: Record<string, { decimals: number; symbol: string }> = {
   "ibc/6490A7EAB61059BFC1CDDEB05917DD70BDF3A611654162A1A47DB930D40D8AF4": { decimals: 6, symbol: "USDC" },
 };
 
+// ZigChain went EVM-compatible: native denom is now azig (18 decimals, atto-unit),
+// replacing uzig (6 decimals). Explicit override since "azig" doesn't fit the
+// generic "u"-prefixed micro-denom heuristic below.
+const NATIVE_DENOM_OVERRIDES: Record<string, { decimals: number; symbol: string }> = {
+  azig: { decimals: 18, symbol: "ZIG" },
+};
+
 function getDisplayDenom(denom: string): { decimals: number; symbol: string } | null {
   if (denom in IBC_DENOMS) {
     return IBC_DENOMS[denom] ?? null;
+  }
+
+  if (denom in NATIVE_DENOM_OVERRIDES) {
+    return NATIVE_DENOM_OVERRIDES[denom] ?? null;
   }
 
   if (/^u[a-z][a-z0-9]+$/i.test(denom)) {
