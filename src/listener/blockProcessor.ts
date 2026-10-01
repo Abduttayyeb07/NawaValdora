@@ -29,6 +29,14 @@ export class BlockProcessor {
 
   private readonly rpcClient: RpcClient;
 
+  // Tracks a large height jump across consecutive polls before trusting it —
+  // see scheduleCatchUp for why.
+  private suspiciousHeight = 0;
+
+  private suspiciousStreak = 0;
+
+  private static readonly LOOKAHEAD_CONFIRM_STREAK = 3;
+
   private targetHeight = 0;
 
   private readonly transactionMonitorService: TransactionMonitorService;
@@ -85,16 +93,38 @@ export class BlockProcessor {
     }
 
     // Reject heights that are unrealistically far ahead of what we've seen —
-    // this guards against a WS node being ahead of the HTTP RPC node, which
-    // would cause every fetch in that range to fail with a 500 error.
+    // this guards against a bad/inconsistent RPC backend reporting a one-off
+    // bogus height. But don't block forever on a real gap (bot downtime, RPC
+    // catching up): if the same large jump keeps showing up on consecutive
+    // polls instead of reverting, it's real — trust it and re-baseline, or
+    // every future poll would also exceed the stale threshold and we'd be
+    // stuck rejecting the real chain height permanently.
     const MAX_LOOKAHEAD = 500;
     if (this.latestObservedHeight > 0 && height > this.latestObservedHeight + MAX_LOOKAHEAD) {
+      this.suspiciousStreak = height >= this.suspiciousHeight ? this.suspiciousStreak + 1 : 1;
+      this.suspiciousHeight = height;
+
+      if (this.suspiciousStreak < BlockProcessor.LOOKAHEAD_CONFIRM_STREAK) {
+        this.logger.warn(
+          {
+            height,
+            latestObservedHeight: this.latestObservedHeight,
+            maxLookahead: MAX_LOOKAHEAD,
+            streak: this.suspiciousStreak,
+          },
+          "Ignoring suspiciously large height jump from WebSocket",
+        );
+        return;
+      }
+
       this.logger.warn(
-        { height, latestObservedHeight: this.latestObservedHeight, maxLookahead: MAX_LOOKAHEAD },
-        "Ignoring suspiciously large height jump from WebSocket",
+        { height, previousLatestObservedHeight: this.latestObservedHeight },
+        "Large height jump confirmed on consecutive polls — re-baselining instead of deadlocking",
       );
-      return;
     }
+
+    this.suspiciousStreak = 0;
+    this.suspiciousHeight = 0;
 
     this.latestObservedHeight = Math.max(this.latestObservedHeight, height);
     this.targetHeight = this.latestObservedHeight;
